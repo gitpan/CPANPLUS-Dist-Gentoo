@@ -19,11 +19,11 @@ CPANPLUS::Dist::Gentoo - CPANPLUS backend generating Gentoo ebuilds.
 
 =head1 VERSION
 
-Version 0.02_01
+Version 0.03
 
 =cut
 
-our $VERSION = '0.02_01';
+our $VERSION = '0.03';
 
 =head1 SYNOPSIS
 
@@ -36,13 +36,17 @@ our $VERSION = '0.02_01';
 
 =head1 DESCRPITON
 
-This module is a CPANPLUS backend that recursively generates Gentoo ebuilds for a given package in the specified overlay (defaults to C</usr/local/portage>), update the manifest, and even emerge it (together with its dependencies) if the user requires it. You need write permissions on the directory where Gentoo fetches its source files (usually C</usr/portage/distfiles>).
+This module is a CPANPLUS backend that recursively generates Gentoo ebuilds for a given package in the specified overlay (defaults to F</usr/local/portage>), updates the manifest, and even emerges it (together with its dependencies) if the user requires it. You need write permissions on the directory where Gentoo fetches its source files (usually F</usr/portage/distfiles>). You also need to specify the correct keyword for your architecture if it differs from the default C<x86>.
 
-The generated ebuilds are placed into the section C<perl-gcpanp>. They favour depending on C<perl-core> or C<dev-perl> rather than C<perl-gcpanp>.
+The generated ebuilds are placed into the C<perl-gcpanp> category. They favour depending on C<perl-core>, C<dev-perl> or C<perl-gcpan> (in that order) rather than C<perl-gcpanp>.
+
+=head1 INSTALLATION
+
+After installing this module, you should append C<perl-gcpanp> to your F</etc/portage/categories> file.
 
 =head1 METHODS
 
-All the methods are inherited from L<CPANPLUS::Dist::Base>. Please refer to its perldoc for precise information on what's done at each step.
+All the methods are inherited from L<CPANPLUS::Dist::Base>. Please refer to its documentation for precise information on what's done at each step.
 
 =cut
 
@@ -61,19 +65,27 @@ sub format_available {
 sub init {
  my ($self) = @_;
  my $stat = $self->status;
+ my $conf = $self->parent->parent->configure_object;
+
  $stat->mk_accessors(qw/name version dist desc uri src license deps
-                        eb_name eb_version eb_dir eb_file distdir fetched_arch
-                        keywords do_manifest/);
+                        eb_name eb_version eb_dir eb_file fetched_arch
+                        overlay distdir keywords do_manifest
+                        force verbose/);
+
+ $stat->force($conf->get_conf('force'));
+ $stat->verbose($conf->get_conf('verbose'));
 
  return 1;
 }
 
 my %gentooism = (
- 'Digest'          => 'digest-base',
- 'Locale-Maketext' => 'locale-maketext',
- 'Net-Ping'        => 'net-ping',
- 'PathTools'       => 'File-Spec',
- 'PodParser'       => 'Pod-Parser',
+ 'Digest'            => 'digest-base',
+ 'Locale-Maketext'   => 'locale-maketext',
+ 'Net-Ping'          => 'net-ping',
+ 'PathTools'         => 'File-Spec',
+ 'PodParser'         => 'Pod-Parser',
+ 'Set-Scalar'        => 'set-scalar',
+ 'Tie-EncryptedHash' => 'tie-encryptedhash',
 );
 
 sub prepare {
@@ -95,10 +107,10 @@ sub prepare {
  $manifest = 0 if $manifest =~ /^\s*no?\s*$/i;
  $stat->do_manifest($manifest);
 
- my $overlay = catdir(delete($opts{'overlay'}) || '/usr/local/portage',
-                      CATEGORY);
+ $stat->overlay(delete($opts{'overlay'}) || '/usr/local/portage');
 
  $stat->distdir(delete($opts{'distdir'}) || '/usr/portage/distfiles');
+
  if ($stat->do_manifest && !-w $stat->distdir) {
   error 'distdir isn\'t writable -- aborting';
   return 0;
@@ -110,39 +122,67 @@ sub prepare {
 
  my $version = $mod->package_version;
  $stat->version($version);
+
  $stat->dist($name . '-' . $version);
- my $f = 1;
- $version =~ s/_+/$f ? do { $f = 0; '_p' } : ''/ge;
- 1 while $version =~ s/(_p[^.]*)\.+/$1/;
+
+ $version =~ s/[^\d._]+//g;
+ $version =~ s/^[._]*//;
+ $version =~ s/[._]*$//;
+ $version =~ s/[._]*_[._]*/_/g;
+ {
+  ($version, my $patch, my @rest) = split /_/, $version;
+  $version .= '_p' . $patch if defined $patch;
+  $version .= join('.', '', @rest) if @rest;
+ }
  $stat->eb_version($version);
 
- $stat->eb_name($gentooism{$stat->name} || $stat->name);
- $stat->eb_dir(catdir($overlay, $stat->eb_name));
- $stat->eb_file(catfile($stat->eb_dir,
-                        $stat->eb_name . '-' . $stat->eb_version . '.ebuild'));
- if (-r $stat->eb_file) {
-  msg 'Ebuild already generated for ' . $stat->dist . ' -- skipping';
-  $stat->prepared(1);
-  $stat->created(1);
-  return 1;
+ $stat->eb_name($gentooism{$name} || $name);
+
+ $stat->eb_dir(catdir($stat->overlay, CATEGORY, $stat->eb_name));
+
+ my $file = catfile($stat->eb_dir,
+                    $stat->eb_name . '-' . $stat->eb_version . '.ebuild');
+ if (-e $file) {
+  my $skip = 1;
+  if ($stat->force) {
+   if (-w $file) {
+    1 while unlink $file;
+    $skip = 0;
+   } else {
+    error "Can't force rewriting of $file -- skipping";
+   }
+  } else {
+   msg 'Ebuild already generated for ' . $stat->dist . ' -- skipping';
+  }
+  if ($skip) {
+   $stat->prepared(1);
+   $stat->created(1);
+   return 1;
+  }
  }
+ $stat->eb_file($file);
 
  $self->SUPER::prepare(%opts);
 
  my $desc = $mod->description;
  ($desc = $name) =~ s/-+/::/g unless $desc;
  $stat->desc($desc);
+
  $stat->uri('http://search.cpan.org/dist/' . $name);
+
  unless ($name =~ /^([^-]+)/) {
   error 'Wrong distribution name -- aborting';
   return 0;
  }
  $stat->src('mirror://cpan/modules/by-module/' . $1 . '/' . $mod->package);
+
  $stat->license([ qw/Artistic GPL-2/ ]);
 
  my $prereqs = $mod->status->prereqs;
+ $prereqs = { map { ($gentooism{$_} || $_) => $prereqs->{$_} } keys %$prereqs };
  my @depends;
  for my $prereq (sort keys %$prereqs) {
+  next if $prereq =~ /^perl(?:-|\z)/;
   my $obj = $int->module_tree($prereq);
   unless ($obj) {
    error 'Wrong module object -- aborting';
@@ -209,7 +249,7 @@ sub create {
     $a .= '-' . $_->[1];
    }
    '|| ( ' . join(' ', map "$x$_/$a",
-                           qw/perl-core dev-perl/, CATEGORY) # perl-gcpan ?
+                           qw/perl-core dev-perl perl-gcpan/, CATEGORY)
            . ' )';
   } @{$stat->deps};
  $d   .= "\"\n";
@@ -230,8 +270,7 @@ sub create {
   }
 
   msg 'Adding Manifest entry for ' . $stat->dist;
-  unless (scalar run command => [ 'ebuild', $file, 'manifest' ], verbose => 0) {
-   error 'ebuild manifest failed -- aborting';
+  unless ($self->_run([ 'ebuild', $file, 'manifest' ], 0)) {
    1 while unlink $file;
    return 0;
   }
@@ -249,12 +288,7 @@ sub install {
  my @cmd = ('emerge', '=' . $stat->eb_name . '-' . $stat->eb_version);
  unshift @cmd, $sudo if $sudo;
 
- unless (run command => \@cmd, verbose => 1) {
-  error 'emerge failed -- aborting';
-  return 0;
- }
-
- return 1;
+ return $self->_run(\@cmd, 1);
 }
 
 sub uninstall {
@@ -266,12 +300,29 @@ sub uninstall {
  my @cmd = ('emerge', '-C', '=' . $stat->eb_name . '-' . $stat->eb_version);
  unshift @cmd, $sudo if $sudo;
 
- unless (run command => \@cmd, verbose => 1) {
-  error 'emerge -C failed -- aborting';
-  return 0;
+ return $self->_run(\@cmd, 1);
+}
+
+sub _run {
+ my ($self, $cmd, $verbose) = @_;
+ my $stat = $self->status;
+
+ my ($success, $errmsg, $output) = do {
+  local $ENV{PORTDIR_OVERLAY}     = $stat->overlay;
+  local $ENV{PORTAGE_RO_DISTDIRS} = $stat->distdir;
+  run command => $cmd, verbose => $verbose;
+ };
+
+ unless ($success) {
+  error "$errmsg -- aborting";
+  if (not $verbose and defined $output and $self->status->verbose) {
+   my $msg = join '', @$output;
+   1 while chomp $msg;
+   error $msg;
+  }
  }
 
- return 1;
+ return $success;
 }
 
 =head1 DEPENDENCIES
@@ -291,6 +342,8 @@ L<CPANPLUS::Dist::Base>, L<CPANPLUS::Dist::Deb>, L<CPANPLUS::Dist::Mdv>.
 =head1 AUTHOR
 
 Vincent Pit, C<< <perl at profvince.com> >>, L<http://www.profvince.com>.
+
+You can contact me by mail or on C<irc.perl.org> (vincent).
 
 =head1 BUGS
 
