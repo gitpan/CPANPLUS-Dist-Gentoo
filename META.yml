@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               CPANPLUS-Dist-Gentoo
-version:            0.06
+version:            0.07
 abstract:           CPANPLUS backend generating Gentoo ebuilds.
 author:
     - Vincent Pit <perl@profvince.com>
@@ -24,12 +24,12 @@ resources:
     bugtracker:  http://rt.cpan.org/NoAuth/ReportBug.html?Queue=CPANPLUS-Dist-Gentoo
     homepage:    http://search.cpan.org/dist/CPANPLUS-Dist-Gentoo/
     license:     http://dev.perl.org/licenses/
-    repository:  http://git.profvince.com/perl/modules/CPANPLUS-Dist-Gentoo.git
+    repository:  http://git.profvince.com/?p=perl%2Fmodules%2FCPANPLUS-Dist-Gentoo.git
 no_index:
     directory:
         - t
         - inc
-generated_by:       ExtUtils::MakeMaker version 6.48
+generated_by:       ExtUtils::MakeMaker version 6.52
 meta-spec:
     url:      http://module-build.sourceforge.net/META-spec-v1.4.html
     version:  1.4

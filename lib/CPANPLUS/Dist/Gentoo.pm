@@ -22,11 +22,11 @@ CPANPLUS::Dist::Gentoo - CPANPLUS backend generating Gentoo ebuilds.
 
 =head1 VERSION
 
-Version 0.06
+Version 0.07
 
 =cut
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 =head1 SYNOPSIS
 
@@ -441,7 +441,7 @@ sub _run {
 
  unless ($success) {
   error "$errmsg -- aborting";
-  if (not $verbose and defined $output and $self->status->verbose) {
+  if (not $verbose and defined $output and $stat->verbose) {
    my $msg = join '', @$output;
    1 while chomp $msg;
    error $msg;

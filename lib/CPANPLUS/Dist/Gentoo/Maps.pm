@@ -9,11 +9,11 @@ CPANPLUS::Dist::Gentoo::Maps - Map CPAN objects to Gentoo and vice versa.
 
 =head1 VERSION
 
-Version 0.05
+Version 0.07
 
 =cut
 
-our $VERSION = '0.05';
+our $VERSION = '0.07';
 
 =head1 DESCRPITON
 
@@ -133,6 +133,7 @@ This program is free software; you can redistribute it and/or modify it under th
 
 __DATA__
 ANSIColor               Term-ANSIColor
+AcePerl                 Ace
 Audio-CD                Audio-CD-disc-cover
 CGI-Simple              Cgi-Simple
 Cache-Mmap              cache-mmap
@@ -188,6 +189,7 @@ Net-Server              net-server
 OLE-Storage_Lite        OLE-StorageLite
 Ogg-Vorbis-Header       ogg-vorbis-header
 PathTools               File-Spec
+Perl-Tidy               perltidy
 Pod-Parser              PodParser
 Regexp-Common           regexp-common
 SDL_Perl                sdl-perl
