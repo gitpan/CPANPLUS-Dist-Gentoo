@@ -9,11 +9,11 @@ CPANPLUS::Dist::Gentoo::Maps - Map CPAN objects to Gentoo and vice versa.
 
 =head1 VERSION
 
-Version 0.07
+Version 0.08
 
 =cut
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 =head1 DESCRPITON
 
@@ -38,6 +38,36 @@ Maps a CPAN distribution name to its Gentoo counterpart.
 sub name_c2g {
  my ($name) = @_;
  return $gentooisms{$name} || $name;
+}
+
+=head2 C<license_c2g @licenses>
+
+Maps F<META.yml> C<license> tag values to the corresponding list of Gentoo licenses identifiers.
+Duplicates are stripped off.
+
+The included data was gathered from L<Module::Install> and L<Software::License>.
+
+=cut
+
+my %licenses = (
+ apache     => [ 'Apache-2.0' ],
+ artistic   => [ 'Artistic' ],
+ artistic_2 => [ 'Artistic-2' ],
+ bsd        => [ 'BSD' ],
+ gpl        => [ 'GPL-1' ],
+ gpl2       => [ 'GPL-2' ],
+ gpl3       => [ 'GPL-3' ],
+ lgpl       => [ 'LGPL-2.1' ],
+ lgpl2      => [ 'LGPL-2.1' ],
+ lgpl3      => [ 'LGPL-3' ],
+ mit        => [ 'MIT' ],
+ mozilla    => [ 'MPL-1.1' ],
+ perl       => [ 'Artistic', 'GPL-2' ],
+);
+
+sub license_c2g {
+ my %seen;
+ grep !$seen{$_}++, map @{$licenses{+lc} || []}, @_;
 }
 
 =head2 C<version_c2g $version>

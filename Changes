@@ -1,5 +1,18 @@
 Revision history for CPANPLUS-Dist-Gentoo
 
+0.08    2009-09-04 18:50 UTC
+        + Add : Map licenses advertised in the DSLIP or the META file to their
+                Gentoo counterparts.
+        + Chg : CPANPLUS::Dist::Gentoo has much less public methods and imports.
+        + Chg : Don't generate a new ebuild if there's already one available at
+                prepare time (unless --force is used).
+        + Chg : Vast cleanup of the internals.
+        + Fix : Missing dependencies in generated ebuilds (since 0.06).
+        + Fix : Stop bailing out if a prerequisite couldn't have been found in
+                the module tree (such as Config).
+        + Fix : Allow ebuilds whose version is exactly the one required by the
+                dependency. This was really stupid of me to let this slip.
+
 0.07    2009-07-01 08:55 UTC
         + Upd : Update gentooisms.
 

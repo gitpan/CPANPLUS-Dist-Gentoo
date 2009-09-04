@@ -2,7 +2,7 @@ NAME
     CPANPLUS::Dist::Gentoo - CPANPLUS backend generating Gentoo ebuilds.
 
 VERSION
-    Version 0.07
+    Version 0.08
 
 SYNOPSIS
         cpan2dist --format=CPANPLUS::Dist::Gentoo \
@@ -33,16 +33,30 @@ INSTALLATION
     /etc/portage/categories file.
 
 METHODS
-    All the methods are inherited from CPANPLUS::Dist::Base. Please refer to
-    its documentation for precise information on what's done at each step.
+    This module inherits all the methods from CPANPLUS::Dist::Base. Please
+    refer to its documentation for precise information on what's done at
+    each step.
+
+  "intuit_license"
+    Returns an array reference to a list of Gentoo licences identifiers
+    under which the current distribution is released.
+
+  "update_manifest"
+    Updates the Manifest file for the ebuild associated to the current dist
+    object.
+
+  "ebuild_source"
+    Returns the source of the ebuild for the current dist object, or "undef"
+    when one of the dependencies couldn't be mapped to an existing ebuild.
 
 DEPENDENCIES
     Gentoo (<http://gentoo.org>).
 
-    CPANPLUS, IPC::Cmd (core modules since 5.9.5).
+    CPANPLUS, IPC::Cmd (core modules since 5.9.5), Parse::CPAN::Meta (since
+    5.10.1).
 
     Cwd, Carp (since perl 5), File::Path (5.001), File::Copy (5.002),
-    File::Spec::Functions (5.00504).
+    File::Spec (5.00405), List::Util (5.007003).
 
 SEE ALSO
     cpan2dist.
@@ -67,8 +81,7 @@ SUPPORT
         perldoc CPANPLUS::Dist::Gentoo
 
 ACKNOWLEDGEMENTS
-    The module is to some extend cargo-culted from CPANPLUS::Dist::Deb and
-    CPANPLUS::Dist::Mdv.
+    The module was inspired by CPANPLUS::Dist::Deb and CPANPLUS::Dist::Mdv.
 
     Kent Fredric, for testing and suggesting improvements.
 

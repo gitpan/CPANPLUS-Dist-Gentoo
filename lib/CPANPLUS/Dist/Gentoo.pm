@@ -4,13 +4,15 @@ use strict;
 use warnings;
 
 use Cwd qw/abs_path/;
-use File::Copy qw/copy/;
-use File::Path qw/mkpath/;
-use File::Spec::Functions qw/catdir catfile/;
+use List::Util qw/reduce/;
+use File::Copy ();
+use File::Path ();
+use File::Spec;
 
 use IPC::Cmd qw/run can_run/;
+use Parse::CPAN::Meta ();
 
-use CPANPLUS::Error;
+use CPANPLUS::Error ();
 
 use base qw/CPANPLUS::Dist::Base/;
 
@@ -22,11 +24,11 @@ CPANPLUS::Dist::Gentoo - CPANPLUS backend generating Gentoo ebuilds.
 
 =head1 VERSION
 
-Version 0.07
+Version 0.08
 
 =cut
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 =head1 SYNOPSIS
 
@@ -41,9 +43,12 @@ our $VERSION = '0.07';
 
 =head1 DESCRPITON
 
-This module is a CPANPLUS backend that recursively generates Gentoo ebuilds for a given package in the specified overlay (defaults to F</usr/local/portage>), updates the manifest, and even emerges it (together with its dependencies) if the user requires it. You need write permissions on the directory where Gentoo fetches its source files (usually F</usr/portage/distfiles>). The valid C<KEYWORDS> for the generated ebuilds are by default those given in C<ACCEPT_KEYWORDS>, but you can specify your own with the C<keywords> dist-option.
+This module is a CPANPLUS backend that recursively generates Gentoo ebuilds for a given package in the specified overlay (defaults to F</usr/local/portage>), updates the manifest, and even emerges it (together with its dependencies) if the user requires it.
+You need write permissions on the directory where Gentoo fetches its source files (usually F</usr/portage/distfiles>).
+The valid C<KEYWORDS> for the generated ebuilds are by default those given in C<ACCEPT_KEYWORDS>, but you can specify your own with the C<keywords> dist-option.
 
-The generated ebuilds are placed into the C<perl-gcpanp> category. They favour depending on a C<virtual>, on C<perl-core>, C<dev-perl> or C<perl-gcpan> (in that order) rather than C<perl-gcpanp>.
+The generated ebuilds are placed into the C<perl-gcpanp> category.
+They favour depending on a C<virtual>, on C<perl-core>, C<dev-perl> or C<perl-gcpan> (in that order) rather than C<perl-gcpanp>.
 
 =head1 INSTALLATION
 
@@ -51,7 +56,8 @@ After installing this module, you should append C<perl-gcpanp> to your F</etc/po
 
 =head1 METHODS
 
-All the methods are inherited from L<CPANPLUS::Dist::Base>. Please refer to its documentation for precise information on what's done at each step.
+This module inherits all the methods from L<CPANPLUS::Dist::Base>.
+Please refer to its documentation for precise information on what's done at each step.
 
 =cut
 
@@ -64,12 +70,12 @@ my $main_portdir;
 
 my %forced;
 
-sub _unquote {
+my $unquote = sub {
  my $s = shift;
  $s =~ s/^["']*//;
  $s =~ s/["']*$//;
  return $s;
-}
+};
 
 my $format_available;
 
@@ -78,31 +84,31 @@ sub format_available {
 
  for my $prog (qw/emerge ebuild/) {
   unless (can_run($prog)) {
-   error "$prog is required to write ebuilds -- aborting";
+   __PACKAGE__->_abort("$prog is required to write ebuilds");
    return $format_available = 0;
   }
  }
 
  if (IPC::Cmd->can_capture_buffer) {
-  my ($success, $errmsg, $output) = run command => [ qw/emerge --info/ ],
-                                        verbose => 0;
+  my $buffers;
+  my ($success, $errmsg) = run command => [ qw/emerge --info/ ],
+                               verbose => 0,
+                               buffer  => \$buffers;
   if ($success) {
-   for (@{$output || []}) {
-    if (/^PORTDIR_OVERLAY=(.*)$/m) {
-     $overlays = [ map abs_path($_), split ' ', _unquote($1) ];
-    }
-    if (/^ACCEPT_KEYWORDS=(.*)$/m) {
-     $default_keywords = [ split ' ', _unquote($1) ];
-    }
-    if (/^DISTDIR=(.*)$/m) {
-     $default_distdir = abs_path(_unquote($1));
-    }
-    if (/^PORTDIR=(.*)$/m) {
-     $main_portdir = abs_path(_unquote($1));
-    }
+   if ($buffers =~ /^PORTDIR_OVERLAY=(.*)$/m) {
+    $overlays = [ map abs_path($_), split ' ', $unquote->($1) ];
+   }
+   if ($buffers =~ /^ACCEPT_KEYWORDS=(.*)$/m) {
+    $default_keywords = [ split ' ', $unquote->($1) ];
+   }
+   if ($buffers =~ /^DISTDIR=(.*)$/m) {
+    $default_distdir = abs_path($unquote->($1));
+   }
+   if ($buffers =~ /^PORTDIR=(.*)$/m) {
+    $main_portdir = abs_path($unquote->($1));
    }
   } else {
-   error $errmsg;
+   __PACKAGE__->_abort($errmsg);
   }
  }
 
@@ -118,7 +124,8 @@ sub init {
  my $conf = $self->parent->parent->configure_object;
 
  $stat->mk_accessors(qw/name version author distribution desc uri src license
-                        deps eb_name eb_version eb_dir eb_file fetched_arch
+                        fetched_arch deps
+                        ebuild_name ebuild_version ebuild_dir ebuild_file
                         portdir_overlay
                         overlay distdir keywords do_manifest header footer
                         force verbose/);
@@ -138,9 +145,11 @@ sub prepare {
 
  my %opts = @_;
 
- $stat->prepared(0);
+ my $OK   = sub { $stat->prepared(1); 1 };
+ my $FAIL = sub { $stat->prepared(0); $self->_abort(@_) if @_; 0 };
+ my $SKIP = sub { $stat->prepared(1); $stat->created(1); $self->_skip(@_) if @_; 1 };
 
- my $keywords = delete $opts{'keywords'};
+ my $keywords = delete $opts{keywords};
  if (defined $keywords) {
   $keywords = [ split ' ', $keywords ];
  } else {
@@ -148,12 +157,12 @@ sub prepare {
  }
  $stat->keywords($keywords);
 
- my $manifest = delete $opts{'manifest'};
+ my $manifest = delete $opts{manifest};
  $manifest = 1 unless defined $manifest;
  $manifest = 0 if $manifest =~ /^\s*no?\s*$/i;
  $stat->do_manifest($manifest);
 
- my $header = delete $opts{'header'};
+ my $header = delete $opts{header};
  if (defined $header) {
   1 while chomp $header;
   $header .= "\n\n";
@@ -162,7 +171,7 @@ sub prepare {
  }
  $stat->header($header);
 
- my $footer = delete $opts{'footer'};
+ my $footer = delete $opts{footer};
  if (defined $footer) {
   $footer = "\n" . $footer;
  } else {
@@ -170,24 +179,22 @@ sub prepare {
  }
  $stat->footer($footer);
 
- my $overlay = delete $opts{'overlay'};
+ my $overlay = delete $opts{overlay};
  $overlay = (defined $overlay) ? abs_path $overlay : '/usr/local/portage';
  $stat->overlay($overlay);
 
- my $distdir = delete $opts{'distdir'};
+ my $distdir = delete $opts{distdir};
  $distdir = (defined $distdir) ? abs_path $distdir : $default_distdir;
  $stat->distdir($distdir);
 
- if ($stat->do_manifest && !-w $stat->distdir) {
-  error 'distdir isn\'t writable -- aborting';
-  return 0;
- }
+ return $FAIL->("distdir isn't writable") if $stat->do_manifest && !-w $distdir;
+
  $stat->fetched_arch($mod->status->fetch);
 
- my $cur = File::Spec::Functions::curdir();
+ my $cur = File::Spec->curdir();
  my $portdir_overlay;
  for (@$overlays) {
-  if ($_ eq $overlay or File::Spec::Functions::abs2rel($overlay, $_) eq $cur) {
+  if ($_ eq $overlay or File::Spec->abs2rel($overlay, $_) eq $cur) {
    $portdir_overlay = [ @$overlays ];
    last;
   }
@@ -206,40 +213,48 @@ sub prepare {
 
  $stat->distribution($name . '-' . $version);
 
- $stat->eb_version(CPANPLUS::Dist::Gentoo::Maps::version_c2g($version));
+ $stat->ebuild_version(CPANPLUS::Dist::Gentoo::Maps::version_c2g($version));
 
- $stat->eb_name(CPANPLUS::Dist::Gentoo::Maps::name_c2g($name));
+ $stat->ebuild_name(CPANPLUS::Dist::Gentoo::Maps::name_c2g($name));
 
- $stat->eb_dir(catdir($stat->overlay, CATEGORY, $stat->eb_name));
+ $stat->ebuild_dir(File::Spec->catdir(
+  $stat->overlay,
+  CATEGORY,
+  $stat->ebuild_name,
+ ));
 
- my $file = catfile($stat->eb_dir,
-                    $stat->eb_name . '-' . $stat->eb_version . '.ebuild');
- $stat->eb_file($file);
+ my $file = File::Spec->catfile(
+  $stat->ebuild_dir,
+  $stat->ebuild_name . '-' . $stat->ebuild_version . '.ebuild',
+ );
+ $stat->ebuild_file($file);
 
- if (-e $file) {
-  my $skip = 1;
-  if ($stat->force and not $forced{$file}) {
-   if (-w $file) {
-    1 while unlink $file;
-    $forced{$file} = 1;
-    $skip = 0;
-   } else {
-    error "Can't force rewriting of $file -- skipping";
-   }
-  } else {
-   msg 'Ebuild already generated for ' . $stat->distribution . ' -- skipping';
-  }
-  if ($skip) {
-   $stat->prepared(1);
-   $stat->created(1);
+ if ($stat->force) {
+  # Always generate an ebuild in our category when forcing
+  if ($forced{$file}) {
    $stat->dist($file);
-   return 1;
+   return $SKIP->('Ebuild already forced for', $stat->distribution);
+  }
+  ++$forced{$file};
+  if (-e $file) {
+   unless (-w $file) {
+    $stat->dist($file);
+    return $SKIP->("Can't force rewriting of $file");
+   }
+   1 while unlink $file;
+  }
+ } else {
+  if (my @match = $self->_cpan2portage($name, $version)) {
+   $stat->dist($match[1]);
+   return $SKIP->('Ebuild already generated for', $stat->distribution);
   }
  }
 
+ $stat->prepared(0);
+
  $self->SUPER::prepare(%opts);
 
- $stat->prepared(0);
+ return $FAIL->() unless $stat->prepared;
 
  my $desc = $mod->description;
  ($desc = $name) =~ s/-+/::/g unless $desc;
@@ -247,24 +262,17 @@ sub prepare {
 
  $stat->uri('http://search.cpan.org/dist/' . $name);
 
- unless ($author =~ /^(.)(.)/) {
-  error 'Wrong author name -- aborting';
-  return 0;
- }
- $stat->src("mirror://cpan/modules/by-authors/id/$1/$1$2/$author/"
-            . $mod->package);
+ $author =~ /^(.)(.)/ or return $FAIL->('Wrong author name');
+ $stat->src("mirror://cpan/modules/by-authors/id/$1/$1$2/$author/" . $mod->package);
 
- $stat->license([ qw/Artistic GPL-2/ ]);
+ $stat->license($self->intuit_license);
 
  my $prereqs = $mod->status->prereqs;
  my @depends;
  for my $prereq (sort keys %$prereqs) {
   next if $prereq =~ /^perl(?:-|\z)/;
   my $obj = $int->module_tree($prereq);
-  unless ($obj) {
-   error 'Wrong module object -- aborting';
-   return 0;
-  }
+  next unless $obj; # Not in the module tree (e.g. Config)
   next if $obj->package_is_perl_core;
   {
    my $version;
@@ -280,37 +288,170 @@ sub prepare {
  }
  $stat->deps(\@depends);
 
- $stat->prepared(1);
- return 1;
+ return $OK->();
+}
+
+=head2 C<intuit_license>
+
+Returns an array reference to a list of Gentoo licences identifiers under which the current distribution is released.
+
+=cut
+
+my %dslip_license = (
+ p => 'perl',
+ g => 'gpl',
+ l => 'lgpl',
+ b => 'bsd',
+ a => 'artistic',
+ 2 => 'artistic_2',
+);
+
+sub intuit_license {
+ my $self = shift;
+ my $mod  = $self->parent;
+
+ my $dslip = $mod->dslip;
+ if (defined $dslip and $dslip =~ /\S{4}(\S)/) {
+  my @licenses = CPANPLUS::Dist::Gentoo::Maps::license_c2g($dslip_license{$1});
+  return \@licenses if @licenses;
+ }
+
+ my $extract_dir = $mod->status->extract;
+
+ for my $meta_file (qw/META.json META.yml/) {
+  my $meta = eval {
+   Parse::CPAN::Meta::LoadFile(File::Spec->catdir(
+    $extract_dir,
+    $meta_file,
+   ));
+  } or next;
+  my $license = $meta->{license};
+  if (defined $license) {
+   my @licenses = CPANPLUS::Dist::Gentoo::Maps::license_c2g($license);
+   return \@licenses if @licenses;
+  }
+ }
+
+ return [ CPANPLUS::Dist::Gentoo::Maps::license_c2g('perl') ];
 }
 
 sub create {
  my $self = shift;
  my $stat = $self->status;
 
- unless ($stat->prepared) {
-  error 'Can\'t create ' . $stat->distribution . ' since it was never prepared -- aborting';
+ my $file;
+
+ my $OK   = sub {
+  $stat->created(1);
+  $stat->dist($file) if defined $file;
+  1;
+ };
+
+ my $FAIL = sub {
   $stat->created(0);
   $stat->dist(undef);
-  return 0;
+  $self->_abort(@_) if @_;
+  if (defined $file and -f $file) {
+   1 while unlink $file;
+  }
+  0;
+ };
+
+ unless ($stat->prepared) {
+  return $FAIL->(
+   'Can\'t create', $stat->distribution, 'since it was never prepared'
+  );
  }
 
  if ($stat->created) {
-  msg $stat->distribution . ' was already created -- skipping';
-  $stat->dist($stat->eb_file);
-  return 1;
+  $self->_skip($stat->distribution, 'was already created');
+  $file = $stat->dist; # Keep the existing one.
+  return $OK->();
  }
 
- my $dir = $stat->eb_dir;
+ my $dir = $stat->ebuild_dir;
  unless (-d $dir) {
-  eval { mkpath $dir };
-  if ($@) {
-   error "mkpath($dir): $@";
-   return 0;
-  }
+  eval { File::Path::mkpath($dir) };
+  return $FAIL->("mkpath($dir): $@") if $@;
  }
 
- my %seen;
+ $file = $stat->ebuild_file;
+
+ # Create a placeholder ebuild to prevent recursion with circular dependencies.
+ {
+  open my $eb, '>', $file or return $FAIL->("open($file): $!");
+  print $eb "PLACEHOLDER\n";
+ }
+
+ $stat->created(0);
+ $stat->dist(undef);
+
+ $self->SUPER::create(@_);
+
+ return $FAIL->() unless $stat->created;
+
+ {
+  open my $eb, '>', $file or return $FAIL->("open($file): $!");
+  my $source = $self->ebuild_source;
+  return $FAIL->() unless defined $source;
+  print $eb $source;
+ }
+
+ return $FAIL->() if $stat->do_manifest and not $self->update_manifest;
+
+ return $OK->();
+}
+
+=head2 C<update_manifest>
+
+Updates the F<Manifest> file for the ebuild associated to the current dist object.
+
+=cut
+
+sub update_manifest {
+ my $self = shift;
+ my $stat = $self->status;
+
+ my $file = $stat->ebuild_file;
+ unless ($file and -e $file) {
+  return $self->_abort('The ebuild file is invalid or does not exist');
+ }
+
+ unless (File::Copy::copy($stat->fetched_arch => $stat->distdir)) {
+  return $self->_abort("Couldn\'t copy the distribution file to distdir ($!)");
+ }
+
+ $self->_notify('Adding Manifest entry for', $stat->distribution);
+
+ return $self->_run([ 'ebuild', $stat->ebuild_file, 'manifest' ], 0);
+}
+
+=head2 C<ebuild_source>
+
+Returns the source of the ebuild for the current dist object, or C<undef> when one of the dependencies couldn't be mapped to an existing ebuild.
+
+=cut
+
+sub ebuild_source {
+ my $self = shift;
+ my $stat = $self->status;
+
+ # We must resolve the deps now and not inside prepare because _cpan2portage
+ # has to see the ebuilds already generated for the dependencies of the current
+ # dist.
+ my @deps;
+ for (@{$stat->deps}) {
+  my $dep = $self->_cpan2portage(@$_);
+  unless (defined $dep) {
+   $self->_abort(
+    "Couldn't find an appropriate ebuild for $_->[0] in the portage tree"
+   );
+   return;
+  }
+  push @deps, $dep;
+ }
+
+ @deps = do { my %seen; sort grep !$seen{$_}++, 'dev-lang/perl', @deps };
 
  my $d = $stat->header;
  $d   .= "# Generated by CPANPLUS::Dist::Gentoo version $VERSION\n\n";
@@ -322,46 +463,11 @@ sub create {
  $d   .= "SLOT=\"0\"\n";
  $d   .= 'LICENSE="|| ( ' . join(' ', sort @{$stat->license}) . " )\"\n";
  $d   .= 'KEYWORDS="' . join(' ', sort @{$stat->keywords}) . "\"\n";
- $d   .= 'DEPEND="' . join("\n",
-  sort grep !$seen{$_}++, 'dev-lang/perl',
-                          map $self->_cpan2portage(@$_), @{$stat->deps}
- ) . "\"\n";
+ $d   .= 'DEPEND="' . join("\n", @deps) . "\"\n";
  $d   .= "SRC_TEST=\"do\"\n";
  $d   .= $stat->footer;
 
- my $file = $stat->eb_file;
- open my $eb, '>', $file or do {
-  error "open($file): $! -- aborting";
-  return 0;
- };
- print $eb $d;
- close $eb;
-
- $stat->created(0);
- $stat->dist(undef);
-
- $self->SUPER::create(@_);
-
- $stat->created(0);
- $stat->dist(undef);
-
- if ($stat->do_manifest) {
-  unless (copy $stat->fetched_arch, $stat->distdir) {
-   error "Couldn\'t copy the distribution file to distdir ($!) -- aborting";
-   1 while unlink $file;
-   return 0;
-  }
-
-  msg 'Adding Manifest entry for ' . $stat->distribution;
-  unless ($self->_run([ 'ebuild', $file, 'manifest' ], 0)) {
-   1 while unlink $file;
-   return 0;
-  }
- }
-
- $stat->created(1);
- $stat->dist($file);
- return 1;
+ return $d;
 }
 
 sub _cpan2portage {
@@ -377,26 +483,32 @@ sub _cpan2portage {
   my $atom = ($category eq 'virtual' ? 'perl-' : '') . $name;
 
   for my $portdir (@portdirs) {
-   my @ebuilds = glob catfile($portdir, $category, $atom,"$atom-*.ebuild");
-   next unless @ebuilds;
+   my @ebuilds = glob File::Spec->catfile(
+    $portdir,
+    $category,
+    $atom,
+    "$atom-*.ebuild",
+   ) or next;
 
+   my $last = reduce {
+    CPANPLUS::Dist::Gentoo::Maps::version_gcmp($b->[1], $a->[1]) >= 0 ? $b : $a
+   } map [ $_, /\Q$atom\E-v?([\d._pr-]+).*?\.ebuild$/ ? $1 : 0 ], @ebuilds;
+
+   my $dep;
    if (defined $ver) { # implies that $version is defined
-    for (@ebuilds) {
-     my ($eb_ver) = /\Q$atom\E-v?([\d._pr-]+).*?\.ebuild$/;
-     return ">=$category/$atom-$ver"
-            if  defined $eb_ver
-            and CPANPLUS::Dist::Gentoo::Maps::version_gcmp($eb_ver, $ver) > 0;
-    }
+    next unless
+              CPANPLUS::Dist::Gentoo::Maps::version_gcmp($last->[1], $ver) >= 0;
+    $dep = ">=$category/$atom-$ver";
    } else {
-    return "$category/$atom";
+    $dep = "$category/$atom";
    }
 
+   return wantarray ? ($dep, $last->[0]) : $dep;
   }
 
  }
 
- error "Couldn't find an appropriate ebuild for $name in the portage tree -- skipping";
- return '';
+ return;
 }
 
 sub install {
@@ -405,7 +517,7 @@ sub install {
  my $conf = $self->parent->parent->configure_object;
 
  my $sudo = $conf->get_program('sudo');
- my @cmd = ('emerge', '=' . $stat->eb_name . '-' . $stat->eb_version);
+ my @cmd = ('emerge', '=' . $stat->ebuild_name . '-' . $stat->ebuild_version);
  unshift @cmd, $sudo if $sudo;
 
  my $success = $self->_run(\@cmd, 1);
@@ -420,7 +532,7 @@ sub uninstall {
  my $conf = $self->parent->parent->configure_object;
 
  my $sudo = $conf->get_program('sudo');
- my @cmd = ('emerge', '-C', '=' . $stat->eb_name . '-' . $stat->eb_version);
+ my @cmd = ('emerge', '-C', '=' . $stat->ebuild_name . '-' . $stat->ebuild_version);
  unshift @cmd, $sudo if $sudo;
 
  my $success = $self->_run(\@cmd, 1);
@@ -440,24 +552,42 @@ sub _run {
  };
 
  unless ($success) {
-  error "$errmsg -- aborting";
+  $self->_abort($errmsg);
   if (not $verbose and defined $output and $stat->verbose) {
    my $msg = join '', @$output;
    1 while chomp $msg;
-   error $msg;
+   CPANPLUS::Error::error($msg);
   }
  }
 
  return $success;
 }
 
+sub _abort {
+ my $self = shift;
+
+ CPANPLUS::Error::error("@_ -- aborting");
+
+ return 0;
+}
+
+sub _notify {
+ my $self = shift;
+
+ CPANPLUS::Error::msg("@_");
+
+ return 1;
+}
+
+sub _skip { shift->_notify(@_, '-- skipping') }
+
 =head1 DEPENDENCIES
 
 Gentoo (L<http://gentoo.org>).
 
-L<CPANPLUS>, L<IPC::Cmd> (core modules since 5.9.5).
+L<CPANPLUS>, L<IPC::Cmd> (core modules since 5.9.5), L<Parse::CPAN::Meta> (since 5.10.1).
 
-L<Cwd>, L<Carp> (since perl 5), L<File::Path> (5.001), L<File::Copy> (5.002), L<File::Spec::Functions> (5.00504).
+L<Cwd>, L<Carp> (since perl 5), L<File::Path> (5.001), L<File::Copy> (5.002), L<File::Spec> (5.00405), L<List::Util> (5.007003).
 
 =head1 SEE ALSO
 
@@ -473,7 +603,8 @@ You can contact me by mail or on C<irc.perl.org> (vincent).
 
 =head1 BUGS
 
-Please report any bugs or feature requests to C<bug-cpanplus-dist-gentoo at rt.cpan.org>, or through the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=CPANPLUS-Dist-Gentoo>.  I will be notified, and then you'll automatically be notified of progress on your bug as I make changes.
+Please report any bugs or feature requests to C<bug-cpanplus-dist-gentoo at rt.cpan.org>, or through the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=CPANPLUS-Dist-Gentoo>.
+I will be notified, and then you'll automatically be notified of progress on your bug as I make changes.
 
 =head1 SUPPORT
 
@@ -483,7 +614,7 @@ You can find documentation for this module with the perldoc command.
 
 =head1 ACKNOWLEDGEMENTS
 
-The module is to some extend cargo-culted from L<CPANPLUS::Dist::Deb> and L<CPANPLUS::Dist::Mdv>.
+The module was inspired by L<CPANPLUS::Dist::Deb> and L<CPANPLUS::Dist::Mdv>.
 
 Kent Fredric, for testing and suggesting improvements.
 
