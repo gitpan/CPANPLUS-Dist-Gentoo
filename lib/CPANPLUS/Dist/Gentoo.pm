@@ -16,6 +16,7 @@ use CPANPLUS::Error ();
 
 use base qw/CPANPLUS::Dist::Base/;
 
+use CPANPLUS::Dist::Gentoo::Atom;
 use CPANPLUS::Dist::Gentoo::Maps;
 
 =head1 NAME
@@ -24,11 +25,11 @@ CPANPLUS::Dist::Gentoo - CPANPLUS backend generating Gentoo ebuilds.
 
 =head1 VERSION
 
-Version 0.08
+Version 0.09
 
 =cut
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 
 =head1 SYNOPSIS
 
@@ -52,7 +53,73 @@ They favour depending on a C<virtual>, on C<perl-core>, C<dev-perl> or C<perl-gc
 
 =head1 INSTALLATION
 
-After installing this module, you should append C<perl-gcpanp> to your F</etc/portage/categories> file.
+Before installing this module, you should append C<perl-gcpanp> to your F</etc/portage/categories> file.
+
+You have two ways for installing this module :
+
+=over 4
+
+=item *
+
+Use the perl overlay located at L<http://git.overlays.gentoo.org/gitweb/?p=proj/perl-overlay.git>.
+It contains an ebuild for L<CPANPLUS::Dist::Gentoo>.
+
+=item *
+
+Bootstrap an ebuild for L<CPANPLUS::Dist::Gentoo> using itself.
+Note that if your Gentoo system C<perl> is C<5.8.x>, L<CPANPLUS> and its dependencies are not installed and not even available in the main portage tree.
+So you need to bootstrap them as well.
+
+First, fetch tarballs for L<CPANPLUS> and L<CPANPLUS::Dist::Gentoo> :
+
+    $ cd /tmp
+    $ wget http://search.cpan.org/CPAN/authors/id/K/KA/KANE/CPANPLUS-0.88.tar.gz
+    $ wget http://search.cpan.org/CPAN/authors/id/V/VP/VPIT/CPANPLUS-Dist-Gentoo-0.09.tar.gz
+
+Log in as root and unpack them in e.g. your home directory :
+
+    # cd
+    # tar xzf /tmp/CPANPLUS-0.88.tar.gz
+    # tar xzf /tmp/CPANPLUS-Dist-Gentoo-0.09.tar.gz
+
+Set up environment variables so that the toolchain is temporarily available :
+
+    # export OLDPATH=$PATH
+    # export PATH=/root/CPANPLUS-0.88/bin:$PATH
+    # export PERL5LIB=/root/CPANPLUS-Dist-Gentoo-0.09/blib/lib:/root/CPANPLUS-0.88/lib:/root/CPANPLUS-0.88/inc/bundle
+
+Make sure you don't have an old C<.cpanplus> configuration visible :
+
+    # [ -d /root/.cpanplus ] && mv /root/.cpanplus{,.bak}
+
+Bootstrap L<CPANPLUS> :
+
+    # cd /root/CPANPLUS-Dist-Gentoo-0.09
+    # samples/g-cpanp CPANPLUS
+
+Reset the environment :
+
+    # export PATH=$OLDPATH
+    # unset PERL5LIB OLDPATH
+
+Emerge L<CPANPLUS> with the ebuilds you've just generated :
+
+    # emerge -tv CPANPLUS
+
+As of september 2009, C<podlators> and C<ExtUtils-MakeMaker> may fail to emerge due to collisions.
+You can work around this by disabling the C<protect-owned> C<FEATURE> for them :
+
+    # FEATURES="-protect-owned" emerge podlators
+    # FEATURES="-protect-owned" emerge ExtUtils-MakeMaker
+
+You may need to run each of these commands two times for them to succeed.
+
+At this point, you can bootstrap L<CPANPLUS::Dist::Gentoo> using the system L<CPANPLUS> :
+
+    # PERL5LIB=/root/CPANPLUS-Dist-Gentoo-0.09/blib/lib samples/g-cpanp CPANPLUS::Dist::Gentoo
+    # emerge -tv CPANPLUS-Dist-Gentoo
+
+=back
 
 =head1 METHODS
 
@@ -124,7 +191,7 @@ sub init {
  my $conf = $self->parent->parent->configure_object;
 
  $stat->mk_accessors(qw/name version author distribution desc uri src license
-                        fetched_arch deps
+                        fetched_arch requires
                         ebuild_name ebuild_version ebuild_dir ebuild_file
                         portdir_overlay
                         overlay distdir keywords do_manifest header footer
@@ -167,7 +234,12 @@ sub prepare {
   1 while chomp $header;
   $header .= "\n\n";
  } else {
-  $header = '';
+  my $year = (localtime)[5] + 1900;
+  $header = <<"  DEF_HEADER";
+# Copyright 1999-$year Gentoo Foundation
+# Distributed under the terms of the GNU General Public License v2
+# \$Header: \$
+  DEF_HEADER
  }
  $stat->header($header);
 
@@ -244,15 +316,15 @@ sub prepare {
    1 while unlink $file;
   }
  } else {
-  if (my @match = $self->_cpan2portage($name, $version)) {
-   $stat->dist($match[1]);
+  if (my $atom = $self->_cpan2portage($name, $version)) {
+   $stat->dist($atom->ebuild);
    return $SKIP->('Ebuild already generated for', $stat->distribution);
   }
  }
 
  $stat->prepared(0);
 
- $self->SUPER::prepare(%opts);
+ $self->SUPER::prepare(@_);
 
  return $FAIL->() unless $stat->prepared;
 
@@ -267,8 +339,8 @@ sub prepare {
 
  $stat->license($self->intuit_license);
 
- my $prereqs = $mod->status->prereqs;
- my @depends;
+ my $prereqs = $mod->status->requires;
+ my @requires;
  for my $prereq (sort keys %$prereqs) {
   next if $prereq =~ /^perl(?:-|\z)/;
   my $obj = $int->module_tree($prereq);
@@ -283,10 +355,10 @@ sub prepare {
      $version = $obj->package_version;
     }
    }
-   push @depends, [ $obj->package_name, $version ];
+   push @requires, [ $obj->package_name, $version ];
   }
  }
- $stat->deps(\@depends);
+ $stat->requires(\@requires);
 
  return $OK->();
 }
@@ -413,7 +485,7 @@ sub update_manifest {
  my $stat = $self->status;
 
  my $file = $stat->ebuild_file;
- unless ($file and -e $file) {
+ unless (defined $file and -e $file) {
   return $self->_abort('The ebuild file is invalid or does not exist');
  }
 
@@ -423,7 +495,7 @@ sub update_manifest {
 
  $self->_notify('Adding Manifest entry for', $stat->distribution);
 
- return $self->_run([ 'ebuild', $stat->ebuild_file, 'manifest' ], 0);
+ return $self->_run([ 'ebuild', $file, 'manifest' ], 0);
 }
 
 =head2 C<ebuild_source>
@@ -439,19 +511,23 @@ sub ebuild_source {
  # We must resolve the deps now and not inside prepare because _cpan2portage
  # has to see the ebuilds already generated for the dependencies of the current
  # dist.
- my @deps;
- for (@{$stat->deps}) {
-  my $dep = $self->_cpan2portage(@$_);
-  unless (defined $dep) {
+ my @requires;
+ for (@{$stat->requires}) {
+  my $atom = $self->_cpan2portage(@$_);
+  unless (defined $atom) {
    $self->_abort(
     "Couldn't find an appropriate ebuild for $_->[0] in the portage tree"
    );
    return;
   }
-  push @deps, $dep;
+  push @requires, $atom;
  }
 
- @deps = do { my %seen; sort grep !$seen{$_}++, 'dev-lang/perl', @deps };
+ my $perl = CPANPLUS::Dist::Gentoo::Atom->new(
+  category => 'dev-lang',
+  name     => 'perl',
+ );
+ @requires = CPANPLUS::Dist::Gentoo::Atom->fold($perl, @requires);
 
  my $d = $stat->header;
  $d   .= "# Generated by CPANPLUS::Dist::Gentoo version $VERSION\n\n";
@@ -463,7 +539,8 @@ sub ebuild_source {
  $d   .= "SLOT=\"0\"\n";
  $d   .= 'LICENSE="|| ( ' . join(' ', sort @{$stat->license}) . " )\"\n";
  $d   .= 'KEYWORDS="' . join(' ', sort @{$stat->keywords}) . "\"\n";
- $d   .= 'DEPEND="' . join("\n", @deps) . "\"\n";
+ $d   .= 'RDEPEND="' . join("\n", sort @requires) . "\"\n";
+ $d   .= "DEPEND=\"\${RDEPEND}\"\n";
  $d   .= "SRC_TEST=\"do\"\n";
  $d   .= $stat->footer;
 
@@ -473,37 +550,33 @@ sub ebuild_source {
 sub _cpan2portage {
  my ($self, $name, $version) = @_;
 
- $name = CPANPLUS::Dist::Gentoo::Maps::name_c2g($name);
- my $ver;
- $ver = CPANPLUS::Dist::Gentoo::Maps::version_c2g($version) if defined $version;
+ $name    = CPANPLUS::Dist::Gentoo::Maps::name_c2g($name);
+ $version = CPANPLUS::Dist::Gentoo::Maps::version_c2g($version);
 
  my @portdirs = ($main_portdir, @{$self->status->portdir_overlay});
 
  for my $category (qw/virtual perl-core dev-perl perl-gcpan/, CATEGORY) {
-  my $atom = ($category eq 'virtual' ? 'perl-' : '') . $name;
+  my $name = ($category eq 'virtual' ? 'perl-' : '') . $name;
 
   for my $portdir (@portdirs) {
    my @ebuilds = glob File::Spec->catfile(
     $portdir,
     $category,
-    $atom,
-    "$atom-*.ebuild",
+    $name,
+    "$name-*.ebuild",
    ) or next;
 
-   my $last = reduce {
-    CPANPLUS::Dist::Gentoo::Maps::version_gcmp($b->[1], $a->[1]) >= 0 ? $b : $a
-   } map [ $_, /\Q$atom\E-v?([\d._pr-]+).*?\.ebuild$/ ? $1 : 0 ], @ebuilds;
+   my $last = reduce { $a < $b ? $b : $a } # handles overloading
+               map CPANPLUS::Dist::Gentoo::Atom->new_from_ebuild($_),
+                @ebuilds;
+   next if defined $version and $last < $version;
 
-   my $dep;
-   if (defined $ver) { # implies that $version is defined
-    next unless
-              CPANPLUS::Dist::Gentoo::Maps::version_gcmp($last->[1], $ver) >= 0;
-    $dep = ">=$category/$atom-$ver";
-   } else {
-    $dep = "$category/$atom";
-   }
-
-   return wantarray ? ($dep, $last->[0]) : $dep;
+   return CPANPLUS::Dist::Gentoo::Atom->new(
+    category => $last->category,
+    name     => $last->name,
+    (defined $version ? (version => $version, range => '>=') : ()),
+    ebuild   => $last->ebuild,
+   );
   }
 
  }

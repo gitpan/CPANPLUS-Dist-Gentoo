@@ -2,7 +2,7 @@ NAME
     CPANPLUS::Dist::Gentoo - CPANPLUS backend generating Gentoo ebuilds.
 
 VERSION
-    Version 0.08
+    Version 0.09
 
 SYNOPSIS
         cpan2dist --format=CPANPLUS::Dist::Gentoo \
@@ -29,8 +29,72 @@ DESCRPITON
     "perl-gcpan" (in that order) rather than "perl-gcpanp".
 
 INSTALLATION
-    After installing this module, you should append "perl-gcpanp" to your
+    Before installing this module, you should append "perl-gcpanp" to your
     /etc/portage/categories file.
+
+    You have two ways for installing this module :
+
+    *   Use the perl overlay located at
+        <http://git.overlays.gentoo.org/gitweb/?p=proj/perl-overlay.git>. It
+        contains an ebuild for CPANPLUS::Dist::Gentoo.
+
+    *   Bootstrap an ebuild for CPANPLUS::Dist::Gentoo using itself. Note
+        that if your Gentoo system "perl" is "5.8.x", CPANPLUS and its
+        dependencies are not installed and not even available in the main
+        portage tree. So you need to bootstrap them as well.
+
+        First, fetch tarballs for CPANPLUS and CPANPLUS::Dist::Gentoo :
+
+            $ cd /tmp
+            $ wget http://search.cpan.org/CPAN/authors/id/K/KA/KANE/CPANPLUS-0.88.tar.gz
+            $ wget http://search.cpan.org/CPAN/authors/id/V/VP/VPIT/CPANPLUS-Dist-Gentoo-0.09.tar.gz
+
+        Log in as root and unpack them in e.g. your home directory :
+
+            # cd
+            # tar xzf /tmp/CPANPLUS-0.88.tar.gz
+            # tar xzf /tmp/CPANPLUS-Dist-Gentoo-0.09.tar.gz
+
+        Set up environment variables so that the toolchain is temporarily
+        available :
+
+            # export OLDPATH=$PATH
+            # export PATH=/root/CPANPLUS-0.88/bin:$PATH
+            # export PERL5LIB=/root/CPANPLUS-Dist-Gentoo-0.09/blib/lib:/root/CPANPLUS-0.88/lib:/root/CPANPLUS-0.88/inc/bundle
+
+        Make sure you don't have an old ".cpanplus" configuration visible :
+
+            # [ -d /root/.cpanplus ] && mv /root/.cpanplus{,.bak}
+
+        Bootstrap CPANPLUS :
+
+            # cd /root/CPANPLUS-Dist-Gentoo-0.09
+            # samples/g-cpanp CPANPLUS
+
+        Reset the environment :
+
+            # export PATH=$OLDPATH
+            # unset PERL5LIB OLDPATH
+
+        Emerge CPANPLUS with the ebuilds you've just generated :
+
+            # emerge -tv CPANPLUS
+
+        As of september 2009, "podlators" and "ExtUtils-MakeMaker" may fail
+        to emerge due to collisions. You can work around this by disabling
+        the "protect-owned" "FEATURE" for them :
+
+            # FEATURES="-protect-owned" emerge podlators
+            # FEATURES="-protect-owned" emerge ExtUtils-MakeMaker
+
+        You may need to run each of these commands two times for them to
+        succeed.
+
+        At this point, you can bootstrap CPANPLUS::Dist::Gentoo using the
+        system CPANPLUS :
+
+            # PERL5LIB=/root/CPANPLUS-Dist-Gentoo-0.09/blib/lib samples/g-cpanp CPANPLUS::Dist::Gentoo
+            # emerge -tv CPANPLUS-Dist-Gentoo
 
 METHODS
     This module inherits all the methods from CPANPLUS::Dist::Base. Please

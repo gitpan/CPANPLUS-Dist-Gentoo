@@ -1,5 +1,17 @@
 Revision history for CPANPLUS-Dist-Gentoo
 
+0.09    2009-11-29 14:20 UTC
+        + Add : A default header.
+        + Add : Redundant dependencies are simplified to a minimal set.
+        + Chg : The 'requires' dependencies now go into RDEPEND.
+                DEPEND is set to RDEPEND for now.
+        + Doc : A section describing how to bootstrap CPANPLUS and
+                CPANPLUS::Dist::Gentoo has been added.
+        + Fix : dist-options (like the overlay) were not correctly propagated
+                through recursive calls.
+        + Fix : Work around Kwalitee test misfailures.
+        + Upd : One more gentooism : NTLM.
+
 0.08    2009-09-04 18:50 UTC
         + Add : Map licenses advertised in the DSLIP or the META file to their
                 Gentoo counterparts.

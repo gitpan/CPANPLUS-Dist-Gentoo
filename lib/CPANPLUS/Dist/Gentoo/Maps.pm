@@ -9,11 +9,11 @@ CPANPLUS::Dist::Gentoo::Maps - Map CPAN objects to Gentoo and vice versa.
 
 =head1 VERSION
 
-Version 0.08
+Version 0.09
 
 =cut
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 
 =head1 DESCRPITON
 
@@ -79,6 +79,8 @@ Converts a CPAN version to a Gentoo version.
 sub version_c2g {
  my ($v) = @_;
 
+ return unless defined $v;
+
  $v =~ y/-/_/;
  $v =~ y/0-9._//cd;
 
@@ -91,44 +93,6 @@ sub version_c2g {
  $v .= join('.', '', @rest) if @rest;
 
  return $v;
-}
-
-=head2 C<version_gcmp $va, $vb>
-
-Compares two Gentoo versions.
-
-=cut
-
-sub version_gcmp {
- my ($a, $b) = map { defined() ? $_ : 0 } @_;
-
- for ($a, $b) {
-  s/^[._]+//g;
-  s/[._]+$//g;
-  if (/^([\d.]*\d)\.*(?:_p\.*(\d[\d.]*))?\.*(?:-r(\d+))?$/) {
-   $_ = {
-    v => [ split /\.+/, $1 ],
-    p => [ split /\.+/, $2 || 0 ],
-    r => [ $3 || 0 ],
-   };
-  } else {
-   require Carp;
-   Carp::croak("Couldn't parse version string '$_'");
-  }
- }
-
- for my $k (qw/v p r/) {
-  my $xa = $a->{$k};
-  my $xb = $b->{$k};
-  while (@$xa or @$xb) {
-   my $na = shift(@$xa) || 0;
-   my $nb = shift(@$xb) || 0;
-   my $c  = $na <=> $nb;
-   return $c if $c;
-  }
- }
-
- return 0;
 }
 
 =head1 SEE ALSO
@@ -182,6 +146,7 @@ Crypt-RSA               crypt-rsa
 Crypt-Random            crypt-random
 DBIx-SearchBuilder      dbix-searchbuilder
 Data-Buffer             data-buffer
+Date-Manip              DateManip
 Digest                  digest-base
 Digest-BubbleBabble     digest-bubblebabble
 Digest-MD2              digest-md2
@@ -212,6 +177,7 @@ Locale-Maketext-Lexicon locale-maketext-lexicon
 Log-Dispatch            log-dispatch
 Math-Pari               math-pari
 Module-Info             module-info
+NTLM                    Authen-NTLM
 Net-Ping                net-ping
 Net-SFTP                net-sftp
 Net-SSH-Perl            net-ssh-perl
