@@ -3,13 +3,13 @@ package CPANPLUS::Dist::Gentoo;
 use strict;
 use warnings;
 
-use Cwd qw/abs_path/;
+use Cwd        ();
 use List::Util qw/reduce/;
 use File::Copy ();
 use File::Path ();
 use File::Spec;
 
-use IPC::Cmd qw/run can_run/;
+use IPC::Cmd          ();
 use Parse::CPAN::Meta ();
 
 use CPANPLUS::Error ();
@@ -17,6 +17,7 @@ use CPANPLUS::Error ();
 use base qw/CPANPLUS::Dist::Base/;
 
 use CPANPLUS::Dist::Gentoo::Atom;
+use CPANPLUS::Dist::Gentoo::Guard;
 use CPANPLUS::Dist::Gentoo::Maps;
 
 =head1 NAME
@@ -25,11 +26,11 @@ CPANPLUS::Dist::Gentoo - CPANPLUS backend generating Gentoo ebuilds.
 
 =head1 VERSION
 
-Version 0.09
+Version 0.10
 
 =cut
 
-our $VERSION = '0.09';
+our $VERSION = '0.10';
 
 =head1 SYNOPSIS
 
@@ -73,20 +74,20 @@ So you need to bootstrap them as well.
 First, fetch tarballs for L<CPANPLUS> and L<CPANPLUS::Dist::Gentoo> :
 
     $ cd /tmp
-    $ wget http://search.cpan.org/CPAN/authors/id/K/KA/KANE/CPANPLUS-0.88.tar.gz
-    $ wget http://search.cpan.org/CPAN/authors/id/V/VP/VPIT/CPANPLUS-Dist-Gentoo-0.09.tar.gz
+    $ wget http://search.cpan.org/CPAN/authors/id/B/BI/BINGOS/CPANPLUS-0.9003.tar.gz
+    $ wget http://search.cpan.org/CPAN/authors/id/V/VP/VPIT/CPANPLUS-Dist-Gentoo-0.10.tar.gz
 
 Log in as root and unpack them in e.g. your home directory :
 
     # cd
-    # tar xzf /tmp/CPANPLUS-0.88.tar.gz
-    # tar xzf /tmp/CPANPLUS-Dist-Gentoo-0.09.tar.gz
+    # tar xzf /tmp/CPANPLUS-0.9003.tar.gz
+    # tar xzf /tmp/CPANPLUS-Dist-Gentoo-0.10.tar.gz
 
 Set up environment variables so that the toolchain is temporarily available :
 
     # export OLDPATH=$PATH
-    # export PATH=/root/CPANPLUS-0.88/bin:$PATH
-    # export PERL5LIB=/root/CPANPLUS-Dist-Gentoo-0.09/blib/lib:/root/CPANPLUS-0.88/lib:/root/CPANPLUS-0.88/inc/bundle
+    # export PATH=/root/CPANPLUS-0.9003/bin:$PATH
+    # export PERL5LIB=/root/CPANPLUS-Dist-Gentoo-0.10/blib/lib:/root/CPANPLUS-0.9003/lib:/root/CPANPLUS-0.9003/inc/bundle
 
 Make sure you don't have an old C<.cpanplus> configuration visible :
 
@@ -94,7 +95,7 @@ Make sure you don't have an old C<.cpanplus> configuration visible :
 
 Bootstrap L<CPANPLUS> :
 
-    # cd /root/CPANPLUS-Dist-Gentoo-0.09
+    # cd /root/CPANPLUS-Dist-Gentoo-0.10
     # samples/g-cpanp CPANPLUS
 
 Reset the environment :
@@ -116,7 +117,7 @@ You may need to run each of these commands two times for them to succeed.
 
 At this point, you can bootstrap L<CPANPLUS::Dist::Gentoo> using the system L<CPANPLUS> :
 
-    # PERL5LIB=/root/CPANPLUS-Dist-Gentoo-0.09/blib/lib samples/g-cpanp CPANPLUS::Dist::Gentoo
+    # PERL5LIB=/root/CPANPLUS-Dist-Gentoo-0.10/blib/lib samples/g-cpanp CPANPLUS::Dist::Gentoo
     # emerge -tv CPANPLUS-Dist-Gentoo
 
 =back
@@ -150,7 +151,7 @@ sub format_available {
  return $format_available if defined $format_available;
 
  for my $prog (qw/emerge ebuild/) {
-  unless (can_run($prog)) {
+  unless (IPC::Cmd::can_run($prog)) {
    __PACKAGE__->_abort("$prog is required to write ebuilds");
    return $format_available = 0;
   }
@@ -158,21 +159,23 @@ sub format_available {
 
  if (IPC::Cmd->can_capture_buffer) {
   my $buffers;
-  my ($success, $errmsg) = run command => [ qw/emerge --info/ ],
-                               verbose => 0,
-                               buffer  => \$buffers;
+  my ($success, $errmsg) = IPC::Cmd::run(
+   command => [ qw/emerge --info/ ],
+   verbose => 0,
+   buffer  => \$buffers,
+  );
   if ($success) {
    if ($buffers =~ /^PORTDIR_OVERLAY=(.*)$/m) {
-    $overlays = [ map abs_path($_), split ' ', $unquote->($1) ];
+    $overlays = [ map Cwd::abs_path($_), split ' ', $unquote->($1) ];
    }
    if ($buffers =~ /^ACCEPT_KEYWORDS=(.*)$/m) {
     $default_keywords = [ split ' ', $unquote->($1) ];
    }
    if ($buffers =~ /^DISTDIR=(.*)$/m) {
-    $default_distdir = abs_path($unquote->($1));
+    $default_distdir = Cwd::abs_path($unquote->($1));
    }
    if ($buffers =~ /^PORTDIR=(.*)$/m) {
-    $main_portdir = abs_path($unquote->($1));
+    $main_portdir = Cwd::abs_path($unquote->($1));
    }
   } else {
    __PACKAGE__->_abort($errmsg);
@@ -191,6 +194,7 @@ sub init {
  my $conf = $self->parent->parent->configure_object;
 
  $stat->mk_accessors(qw/name version author distribution desc uri src license
+                        meta min_perl
                         fetched_arch requires
                         ebuild_name ebuild_version ebuild_dir ebuild_file
                         portdir_overlay
@@ -252,11 +256,11 @@ sub prepare {
  $stat->footer($footer);
 
  my $overlay = delete $opts{overlay};
- $overlay = (defined $overlay) ? abs_path $overlay : '/usr/local/portage';
+ $overlay = (defined $overlay) ? Cwd::abs_path($overlay) : '/usr/local/portage';
  $stat->overlay($overlay);
 
  my $distdir = delete $opts{distdir};
- $distdir = (defined $distdir) ? abs_path $distdir : $default_distdir;
+ $distdir = (defined $distdir) ? Cwd::abs_path($distdir) : $default_distdir;
  $stat->distdir($distdir);
 
  return $FAIL->("distdir isn't writable") if $stat->do_manifest && !-w $distdir;
@@ -360,7 +364,41 @@ sub prepare {
  }
  $stat->requires(\@requires);
 
+ $stat->min_perl(CPANPLUS::Dist::Gentoo::Maps::perl_version_c2g(
+  eval { $self->meta->{requires}->{perl} }
+ ));
+
  return $OK->();
+}
+
+=head2 C<meta>
+
+Returns the contents of the F<META.yml> or F<META.json> files as parsed by L<Parse::CPAN::Meta>.
+
+=cut
+
+sub meta {
+ my $self = shift;
+ my $mod  = $self->parent;
+ my $stat = $self->status;
+
+ my $meta = $stat->meta;
+ return $meta if defined $meta;
+
+ my $extract_dir = $mod->status->extract;
+
+ for my $name (qw/META.json META.yml/) {
+  my $meta_file = File::Spec->catdir($extract_dir, $name);
+  next unless -e $meta_file;
+
+  my $meta = eval { Parse::CPAN::Meta::LoadFile($meta_file) };
+  if (defined $meta) {
+   $stat->meta($meta);
+   return $meta;
+  }
+ }
+
+ return;
 }
 
 =head2 C<intuit_license>
@@ -388,20 +426,10 @@ sub intuit_license {
   return \@licenses if @licenses;
  }
 
- my $extract_dir = $mod->status->extract;
-
- for my $meta_file (qw/META.json META.yml/) {
-  my $meta = eval {
-   Parse::CPAN::Meta::LoadFile(File::Spec->catdir(
-    $extract_dir,
-    $meta_file,
-   ));
-  } or next;
-  my $license = $meta->{license};
-  if (defined $license) {
-   my @licenses = CPANPLUS::Dist::Gentoo::Maps::license_c2g($license);
-   return \@licenses if @licenses;
-  }
+ my $license = $self->meta->{license};
+ if (defined $license) {
+  my @licenses = CPANPLUS::Dist::Gentoo::Maps::license_c2g($license);
+  return \@licenses if @licenses;
  }
 
  return [ CPANPLUS::Dist::Gentoo::Maps::license_c2g('perl') ];
@@ -413,7 +441,24 @@ sub create {
 
  my $file;
 
+ my $guard = CPANPLUS::Dist::Gentoo::Guard->new(sub {
+  if (defined $file and -e $file and -w _) {
+   1 while unlink $file;
+  }
+ });
+
+ my $SIG_INT = $SIG{INT};
+ local $SIG{INT} = sub {
+  if ($SIG_INT) {
+   local $@;
+   eval { $SIG_INT->() };
+   die $@ if $@;
+  }
+  die 'Caught SIGINT';
+ };
+
  my $OK   = sub {
+  $guard->unarm;
   $stat->created(1);
   $stat->dist($file) if defined $file;
   1;
@@ -423,9 +468,6 @@ sub create {
   $stat->created(0);
   $stat->dist(undef);
   $self->_abort(@_) if @_;
-  if (defined $file and -f $file) {
-   1 while unlink $file;
-  }
   0;
  };
 
@@ -523,10 +565,13 @@ sub ebuild_source {
   push @requires, $atom;
  }
 
+ my $min_perl = $stat->min_perl;
  my $perl = CPANPLUS::Dist::Gentoo::Atom->new(
   category => 'dev-lang',
   name     => 'perl',
+  (defined $min_perl ? (version => $min_perl, range => '>=') : ()),
  );
+
  @requires = CPANPLUS::Dist::Gentoo::Atom->fold($perl, @requires);
 
  my $d = $stat->header;
@@ -621,7 +666,10 @@ sub _run {
  my ($success, $errmsg, $output) = do {
   local $ENV{PORTDIR_OVERLAY}     = join ' ', @{$stat->portdir_overlay};
   local $ENV{PORTAGE_RO_DISTDIRS} = $stat->distdir;
-  run command => $cmd, verbose => $verbose;
+  IPC::Cmd::run(
+   command => $cmd,
+   verbose => $verbose,
+  );
  };
 
  unless ($success) {
@@ -693,7 +741,7 @@ Kent Fredric, for testing and suggesting improvements.
 
 =head1 COPYRIGHT & LICENSE
 
-Copyright 2008-2009 Vincent Pit, all rights reserved.
+Copyright 2008,2009,2010 Vincent Pit, all rights reserved.
 
 This program is free software; you can redistribute it and/or modify it under the same terms as Perl itself.
 

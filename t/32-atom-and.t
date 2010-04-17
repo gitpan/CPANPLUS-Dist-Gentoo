@@ -119,7 +119,7 @@ for my $t (@tests) {
   } elsif ($err) {
    fail "$desc failed but shouldn't: $err";
   } else {
-   cmp_ok $a, '==', $exp, "$desc == '$exp'";
+   ok +($a == $exp), "$desc == '$exp'";
   }
  }
 }

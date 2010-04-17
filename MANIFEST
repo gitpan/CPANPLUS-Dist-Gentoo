@@ -5,6 +5,7 @@ Makefile.PL
 README
 lib/CPANPLUS/Dist/Gentoo.pm
 lib/CPANPLUS/Dist/Gentoo/Atom.pm
+lib/CPANPLUS/Dist/Gentoo/Guard.pm
 lib/CPANPLUS/Dist/Gentoo/Maps.pm
 lib/CPANPLUS/Dist/Gentoo/Version.pm
 samples/g-cpanp
@@ -17,6 +18,7 @@ t/20-version.t
 t/30-atom-new.t
 t/31-atom-cmp.t
 t/32-atom-and.t
+t/40-guard.t
 t/91-pod.t
 t/92-pod-coverage.t
 t/95-portability-files.t

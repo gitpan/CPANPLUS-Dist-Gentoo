@@ -9,11 +9,11 @@ CPANPLUS::Dist::Gentoo::Maps - Map CPAN objects to Gentoo and vice versa.
 
 =head1 VERSION
 
-Version 0.09
+Version 0.10
 
 =cut
 
-our $VERSION = '0.09';
+our $VERSION = '0.10';
 
 =head1 DESCRPITON
 
@@ -95,6 +95,31 @@ sub version_c2g {
  return $v;
 }
 
+=head2 C<perl_version_c2g $version>
+
+Converts a perl version as you can find it in prerequisites to a Gentoo version number.
+
+=cut
+
+sub perl_version_c2g {
+ my ($v) = @_;
+
+ return unless defined $v and $v =~ /^[0-9\.]+$/;
+
+ my @parts;
+ if (my ($version, $subversion) = $v =~ /^([0-9]+)\.(0[^\.]+)$/) {
+  my $len = length $subversion;
+  if (my $pad = $len % 3) {
+   $subversion .= '0' x (3 - $pad);
+  }
+  @parts = ($version, $subversion =~ /(.{1,3})/g);
+ } else {
+  @parts = split /\./, $v;
+ }
+
+ return join '.', map int, @parts;
+}
+
 =head1 SEE ALSO
 
 L<CPANPLUS::Dist::Gentoo>.
@@ -107,7 +132,8 @@ You can contact me by mail or on C<irc.perl.org> (vincent).
 
 =head1 BUGS
 
-Please report any bugs or feature requests to C<bug-cpanplus-dist-gentoo at rt.cpan.org>, or through the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=CPANPLUS-Dist-Gentoo>.  I will be notified, and then you'll automatically be notified of progress on your bug as I make changes.
+Please report any bugs or feature requests to C<bug-cpanplus-dist-gentoo at rt.cpan.org>, or through the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=CPANPLUS-Dist-Gentoo>.
+I will be notified, and then you'll automatically be notified of progress on your bug as I make changes.
 
 =head1 SUPPORT
 
@@ -117,7 +143,7 @@ You can find documentation for this module with the perldoc command.
 
 =head1 COPYRIGHT & LICENSE
 
-Copyright 2009 Vincent Pit, all rights reserved.
+Copyright 2009,2010 Vincent Pit, all rights reserved.
 
 This program is free software; you can redistribute it and/or modify it under the same terms as Perl itself.
 
@@ -198,6 +224,7 @@ Text-Wrapper            text-wrapper
 Tie-EncryptedHash       tie-encryptedhash
 Tk                      perl-tk
 Wx                      wxperl
+XML-Sablotron           XML-Sablot
 YAML                    yaml
 gettext                 Locale-gettext
 txt2html                TextToHTML

@@ -1,5 +1,13 @@
 Revision history for CPANPLUS-Dist-Gentoo
 
+0.10    2010-04-17 14:25 UTC
+        + Add : If a distribution specifies a dependency on a specific perl
+                version in its META file, the ebuild dependency on dev-lang/perl
+                will take it into account.
+        + Fix : Placeholders ebuilds are now deleted when an exception is thrown
+                or the build process is interrupted by Ctrl-C.
+        + Upd : Update gentooisms.
+
 0.09    2009-11-29 14:20 UTC
         + Add : A default header.
         + Add : Redundant dependencies are simplified to a minimal set.

@@ -2,7 +2,7 @@ NAME
     CPANPLUS::Dist::Gentoo - CPANPLUS backend generating Gentoo ebuilds.
 
 VERSION
-    Version 0.09
+    Version 0.10
 
 SYNOPSIS
         cpan2dist --format=CPANPLUS::Dist::Gentoo \
@@ -46,21 +46,21 @@ INSTALLATION
         First, fetch tarballs for CPANPLUS and CPANPLUS::Dist::Gentoo :
 
             $ cd /tmp
-            $ wget http://search.cpan.org/CPAN/authors/id/K/KA/KANE/CPANPLUS-0.88.tar.gz
-            $ wget http://search.cpan.org/CPAN/authors/id/V/VP/VPIT/CPANPLUS-Dist-Gentoo-0.09.tar.gz
+            $ wget http://search.cpan.org/CPAN/authors/id/B/BI/BINGOS/CPANPLUS-0.9003.tar.gz
+            $ wget http://search.cpan.org/CPAN/authors/id/V/VP/VPIT/CPANPLUS-Dist-Gentoo-0.10.tar.gz
 
         Log in as root and unpack them in e.g. your home directory :
 
             # cd
-            # tar xzf /tmp/CPANPLUS-0.88.tar.gz
-            # tar xzf /tmp/CPANPLUS-Dist-Gentoo-0.09.tar.gz
+            # tar xzf /tmp/CPANPLUS-0.9003.tar.gz
+            # tar xzf /tmp/CPANPLUS-Dist-Gentoo-0.10.tar.gz
 
         Set up environment variables so that the toolchain is temporarily
         available :
 
             # export OLDPATH=$PATH
-            # export PATH=/root/CPANPLUS-0.88/bin:$PATH
-            # export PERL5LIB=/root/CPANPLUS-Dist-Gentoo-0.09/blib/lib:/root/CPANPLUS-0.88/lib:/root/CPANPLUS-0.88/inc/bundle
+            # export PATH=/root/CPANPLUS-0.9003/bin:$PATH
+            # export PERL5LIB=/root/CPANPLUS-Dist-Gentoo-0.10/blib/lib:/root/CPANPLUS-0.9003/lib:/root/CPANPLUS-0.9003/inc/bundle
 
         Make sure you don't have an old ".cpanplus" configuration visible :
 
@@ -68,7 +68,7 @@ INSTALLATION
 
         Bootstrap CPANPLUS :
 
-            # cd /root/CPANPLUS-Dist-Gentoo-0.09
+            # cd /root/CPANPLUS-Dist-Gentoo-0.10
             # samples/g-cpanp CPANPLUS
 
         Reset the environment :
@@ -93,13 +93,17 @@ INSTALLATION
         At this point, you can bootstrap CPANPLUS::Dist::Gentoo using the
         system CPANPLUS :
 
-            # PERL5LIB=/root/CPANPLUS-Dist-Gentoo-0.09/blib/lib samples/g-cpanp CPANPLUS::Dist::Gentoo
+            # PERL5LIB=/root/CPANPLUS-Dist-Gentoo-0.10/blib/lib samples/g-cpanp CPANPLUS::Dist::Gentoo
             # emerge -tv CPANPLUS-Dist-Gentoo
 
 METHODS
     This module inherits all the methods from CPANPLUS::Dist::Base. Please
     refer to its documentation for precise information on what's done at
     each step.
+
+  "meta"
+    Returns the contents of the META.yml or META.json files as parsed by
+    Parse::CPAN::Meta.
 
   "intuit_license"
     Returns an array reference to a list of Gentoo licences identifiers
@@ -150,7 +154,7 @@ ACKNOWLEDGEMENTS
     Kent Fredric, for testing and suggesting improvements.
 
 COPYRIGHT & LICENSE
-    Copyright 2008-2009 Vincent Pit, all rights reserved.
+    Copyright 2008,2009,2010 Vincent Pit, all rights reserved.
 
     This program is free software; you can redistribute it and/or modify it
     under the same terms as Perl itself.

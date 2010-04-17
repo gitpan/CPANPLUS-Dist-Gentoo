@@ -10,7 +10,7 @@ use CPANPLUS::Dist::Gentoo::Maps;
 our %gentooisms;
 *gentooisms = \%CPANPLUS::Dist::Gentoo::Maps::gentooisms;
 
-is scalar(keys %gentooisms), 75, 'gentooisms are all there';
+is scalar(keys %gentooisms), 76, 'gentooisms are all there';
 
 is $gentooisms{PathTools}, 'File-Spec', 'gentooisms were correctly loaded';
 
