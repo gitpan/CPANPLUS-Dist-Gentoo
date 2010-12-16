@@ -9,15 +9,15 @@ CPANPLUS::Dist::Gentoo::Version - Gentoo version object.
 
 =head1 VERSION
 
-Version 0.10
+Version 0.11
 
 =cut
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 =head1 DESCRIPTION
 
-This class models Gentoo versions.
+This class models Gentoo versions as described in L<http://devmanual.gentoo.org/ebuild-writing/file-format/index.html>.
 
 =cut
 
@@ -28,10 +28,26 @@ use overload (
  '""'  => \&_stringify,
 );
 
-my $int_rx        = qr/\d+/;
-my $dotted_num_rx = qr/$int_rx(?:\.$int_rx)*/;
+my $int_rx          = qr/[0-9]+/;
+my $positive_int_rx = qr/0*[1-9][0-9]*/;
+my $letter_rx       = qr/[a-zA-Z]/;
+my $dotted_num_rx   = qr/$int_rx(?:\.$int_rx)*/o;
 
-our $version_rx = qr/$dotted_num_rx(?:_p$dotted_num_rx)?(?:-r$int_rx)?/;
+my @suffixes  = qw<alpha beta pre rc normal p>;
+my $suffix_rx = join '|', grep !/^normal$/, @suffixes;
+$suffix_rx    = qr/(?:$suffix_rx)/o;
+
+our $version_rx = qr{
+ $dotted_num_rx $letter_rx?
+ (?:_$suffix_rx$positive_int_rx?)*
+ (?:-r$positive_int_rx)?
+}xo;
+
+my $capturing_version_rx = qr{
+ ($dotted_num_rx) ($letter_rx)?
+ ((?:_$suffix_rx$positive_int_rx?)*)
+ (?:-r($positive_int_rx))?
+}xo;
 
 =head1 METHODS
 
@@ -49,23 +65,28 @@ sub new {
  if (defined $vstring) {
   $vstring =~ s/^[._]+//g;
   $vstring =~ s/[._]+$//g;
-  if ($vstring =~ /^($dotted_num_rx)(?:_p($dotted_num_rx))?(?:-r($int_rx))?$/) {
+
+  if ($vstring =~ /^$capturing_version_rx$/o) {
    return bless {
     string   => $vstring,
     version  => [ split /\.+/, $1 ],
-    patch    => [ defined $2 ? (split /\.+/, $2) : () ],
-    revision => [ defined $3 ? $3                : () ],
+    letter   => $2,
+    suffixes => [ map /_($suffix_rx)($positive_int_rx)?/go, $3 ],
+    revision => $4,
    }, $class;
   }
+
+  require Carp;
+  Carp::croak("Couldn't parse version string '$vstring'");
  }
 
  require Carp;
- Carp::croak("Couldn't parse version string '$vstring'");
+ Carp::croak('You must specify a version string');
 }
 
 my @parts;
 BEGIN {
- @parts = qw/version patch revision/;
+ @parts = qw<version letter suffixes revision>;
  eval "sub $_ { \$_[0]->{$_} }" for @parts;
 }
 
@@ -73,15 +94,24 @@ BEGIN {
 
 Read-only accessor for the C<version> part of the version object.
 
-=head2 C<patch>
+=head2 C<letter>
 
-Read-only accessor for the C<patch> part of the version object.
+Read-only accessor for the C<letter> part of the version object.
+
+=head2 C<suffixes>
+
+Read-only accessor for the C<suffixes> part of the version object.
 
 =head2 C<revision>
 
 Read-only accessor for the C<revision> part of the version object.
 
 =cut
+
+my %suffix_grade = do {
+ my $i = 0;
+ map { $_ => ++$i } @suffixes;
+};
 
 sub _spaceship {
  my ($v1, $v2, $r) = @_;
@@ -92,9 +122,10 @@ sub _spaceship {
 
  ($v1, $v2) = ($v2, $v1) if $r;
 
- for (@parts) {
-  my @a = @{ $v1->$_ };
-  my @b = @{ $v2->$_ };
+ {
+  my @a = @{ $v1->version };
+  my @b = @{ $v2->version };
+
   while (@a or @b) {
    my $x = shift(@a) || 0;
    my $y = shift(@b) || 0;
@@ -103,17 +134,54 @@ sub _spaceship {
   }
  }
 
+ {
+  my ($l1, $l2) = map { defined() ? ord : 0 } map $_->letter, $v1, $v2;
+
+  my $c = $l1 <=> $l2;
+  return $c if $c;
+ }
+
+ {
+  my @a = @{ $v1->suffixes };
+  my @b = @{ $v2->suffixes };
+
+  while (@a or @b) {
+   my $x = $suffix_grade{ shift(@a) || 'normal' };
+   my $y = $suffix_grade{ shift(@b) || 'normal' };
+   my $c = $x <=> $y;
+   return $c if $c;
+
+   $x = shift(@a) || 0;
+   $y = shift(@b) || 0;
+   $c = $x <=> $y;
+   return $c if $c;
+  }
+ }
+
+ {
+  my ($r1, $r2) = map { defined() ? $_ : 0 } map $_->revision, $v1, $v2;
+
+  my $c = $r1 <=> $r2;
+  return $c if $c;
+ }
+
  return 0;
 }
 
 sub _stringify {
  my ($v) = @_;
 
- my ($version, $patch, $revision) = map $v->$_, @parts;
+ my ($version, $letter, $suffixes, $revision) = map $v->$_, @parts;
+ my @suffixes = @$suffixes;
 
- $version  = join '.', @$version;
- $version .= '_p' . join('.', @$patch)    if @$patch;
- $version .= '-r' . join('.', @$revision) if @$revision;
+ $version   = join '.', @$version;
+ $version  .= $letter if defined $letter;
+ while (my @suffix = splice @suffixes, 0, 2) {
+  my $s = $suffix[0];
+  my $n = $suffix[1];
+  $version .= "_$s" . (defined $n ? $n : '');
+ }
+ $version .= "-r$revision" if defined $revision;
 
  $version;
 }

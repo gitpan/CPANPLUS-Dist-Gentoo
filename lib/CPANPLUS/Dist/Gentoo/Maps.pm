@@ -9,11 +9,11 @@ CPANPLUS::Dist::Gentoo::Maps - Map CPAN objects to Gentoo and vice versa.
 
 =head1 VERSION
 
-Version 0.10
+Version 0.11
 
 =cut
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 =head1 DESCRPITON
 
@@ -21,9 +21,9 @@ This is an helper package to L<CPANPLUS::Dist::Gentoo>.
 
 =cut
 
-our %gentooisms;
+my %name_mismatch;
 
-/^\s*([\w-]+)\s+([\w-]+)\s*$/ and $gentooisms{$1} = $2 while <DATA>;
+/^\s*([\w-]+)\s+([\w-]+)\s*$/ and $name_mismatch{$1} = $2 while <DATA>;
 
 close DATA;
 
@@ -37,7 +37,7 @@ Maps a CPAN distribution name to its Gentoo counterpart.
 
 sub name_c2g {
  my ($name) = @_;
- return $gentooisms{$name} || $name;
+ return $name_mismatch{$name} || $name;
 }
 
 =head2 C<license_c2g @licenses>
@@ -67,32 +67,195 @@ my %licenses = (
 
 sub license_c2g {
  my %seen;
- grep !$seen{$_}++, map @{$licenses{+lc} || []}, @_;
+
+ grep !$seen{$_}++,
+  map @{$licenses{+lc} || []},
+   grep defined,
+    @_;
 }
 
-=head2 C<version_c2g $version>
+=head2 C<version_c2g $name, $version>
 
-Converts a CPAN version to a Gentoo version.
+Converts the C<$version> of a CPAN distribution C<$name> to a Gentoo version.
 
 =cut
 
-sub version_c2g {
+my $default_mapping = sub {
  my ($v) = @_;
 
- return unless defined $v;
-
+ $v =~ s/^v//;
  $v =~ y/-/_/;
- $v =~ y/0-9._//cd;
 
  $v =~ s/^[._]*//;
  $v =~ s/[._]*$//;
  $v =~ s/([._])[._]*/$1/g;
 
- ($v, my $patch, my @rest) = split /_/, $v;
- $v .= '_p' . $patch if defined $patch;
- $v .= join('.', '', @rest) if @rest;
+ ($v, my $patch) = split /_/, $v, 2;
+ if (defined $patch) {
+  $patch =~ s/_//g;
+  $v .= "_p$patch";
+ }
 
  return $v;
+};
+
+my $insert_dot_at = sub {
+ my ($v, $pos, $all) = @_;
+
+ my ($int, $frac) = split /\./, $v, 2;
+ return $v unless defined $frac;
+
+ my @p;
+ push @p, $-[0] while $frac =~ /[0-9]/g;
+ my %digit = map { $_ => 1 } @p;
+
+ my $shift = 0;
+ for (my $i = $pos; $i < @p; $i += $pos) {
+  if ($digit{$i}) {
+   substr($frac, $i + $shift, 0) = '.';
+   ++$shift;
+  }
+  last unless $all;
+ }
+
+ "$int.$frac";
+};
+
+my $insert_dot_at_1     = sub { $insert_dot_at->($_[0], 1, 0) },
+my $insert_dot_at_all_1 = sub { $insert_dot_at->($_[0], 1, 1) },
+my $insert_dot_at_2     = sub { $insert_dot_at->($_[0], 2, 0) },
+my $insert_dot_at_all_2 = sub { $insert_dot_at->($_[0], 2, 1) },
+my $insert_dot_at_all_3 = sub { $insert_dot_at->($_[0], 3, 1) },
+
+my $pad_decimals_to = sub {
+ my ($v, $n) = @_;
+
+ my ($int, $frac) = split /\./, $v, 2;
+ return $v unless defined $v;
+
+ my $l = length $frac;
+ if ($l < $n) {
+  $frac .= '0' x ($n - $l);
+ }
+
+ "$int.$frac";
+};
+
+my $pad_decimals_to_2 = sub { $pad_decimals_to->($_[0], 2) };
+my $pad_decimals_to_4 = sub { $pad_decimals_to->($_[0], 4) };
+
+my $correct_suffixes = sub {
+ my ($v) = @_;
+
+ $v = $default_mapping->($v);
+ $v =~ s/(?<!_)((?:alpha|beta|pre|rc|p)\d*)\b/_$1/g;
+
+ return $v;
+};
+
+my $strip_letters = sub {
+ my ($v) = @_;
+
+ $v = $default_mapping->($v);
+ $v =~ s/(?<=\d)[a-z]+//g;
+
+ return $v;
+};
+
+my $letters_as_suffix = sub {
+ my ($v) = @_;
+
+ $v = $default_mapping->($v);
+ $v =~ s/(?<=\d)b(?=\d)/_beta/g;
+
+ return $v;
+};
+
+my %version_mismatch;
+
+$version_mismatch{$_} = $insert_dot_at_1 for qw<
+ CGI-Simple
+>;
+
+$version_mismatch{$_} = $insert_dot_at_all_1 for qw<
+ AnyEvent
+ Archive-Rar
+ IO-AIO
+ Image-Size
+ Linux-Inotify2
+ PadWalker
+ Tie-Array-Sorted
+ Tk-TableMatrix
+ XML-RSS-Feed
+>;
+
+$version_mismatch{$_} = $insert_dot_at_2 for qw<
+ Error
+>;
+
+$version_mismatch{$_} = $insert_dot_at_all_2 for qw<
+ Authen-Htpasswd
+ BSD-Resource
+ CDDB
+ Cairo
+ Curses-UI
+ DBD-mysql
+ Email-MessageID
+ Exception-Base
+ ExtUtils-CBuilder
+ ExtUtils-ParseXS
+ FileHandle-Unget
+ FreezeThaw
+ Lexical-Persistence
+ Lingua-EN-Inflect
+ Mail-Mbox-MessageParser
+ Module-Build
+ SQL-Abstract-Limit
+ Term-ReadLine-Perl
+ Test-Differences
+ Time-HiRes
+ Time-Local
+ perl-ldap
+>;
+
+$version_mismatch{$_} = $insert_dot_at_all_3 for qw<
+ Parse-RecDescent
+ Return-Value
+>;
+
+$version_mismatch{$_} = $pad_decimals_to_2 for qw<
+ Nmap-Parser
+ XML-AutoWriter
+>;
+
+$version_mismatch{$_} = $pad_decimals_to_4 for qw<
+ Convert-BER
+>;
+
+$version_mismatch{$_} = $correct_suffixes for qw<
+ Gimp
+ XML-Grove
+>;
+
+$version_mismatch{$_} = $strip_letters for qw<
+ DelimMatch
+ SGMLSpm
+>;
+
+$version_mismatch{$_} = $letters_as_suffix for qw<
+ Frontier-RPC
+>;
+
+sub version_c2g {
+ my ($n, $v) = @_;
+
+ return unless defined $v;
+
+ my $handler;
+ $handler = $version_mismatch{$n} if defined $n;
+ $handler = $default_mapping  unless defined $handler;
+
+ return $handler->($v);
 }
 
 =head2 C<perl_version_c2g $version>
@@ -154,8 +317,9 @@ This program is free software; you can redistribute it and/or modify it under th
 __DATA__
 ANSIColor               Term-ANSIColor
 AcePerl                 Ace
-Audio-CD                Audio-CD-disc-cover
 CGI-Simple              Cgi-Simple
+CGI-SpeedyCGI           SpeedyCGI
+CPAN-Mini-Phalanx100    CPAN-Mini-Phalanx
 Cache-Mmap              cache-mmap
 Class-Loader            class-loader
 Class-ReturnValue       class-returnvalue
@@ -181,6 +345,7 @@ ExtUtils-PkgConfig      extutils-pkgconfig
 Frontier-RPC            frontier-rpc
 Gimp                    gimp-perl
 Glib                    glib-perl
+Gnome2                  gnome2-perl
 Gnome2-Canvas           gnome2-canvas
 Gnome2-GConf            gnome2-gconf
 Gnome2-Print            gnome2-print
@@ -203,6 +368,7 @@ Locale-Maketext-Lexicon locale-maketext-lexicon
 Log-Dispatch            log-dispatch
 Math-Pari               math-pari
 Module-Info             module-info
+MogileFS-Server         mogilefs-server
 NTLM                    Authen-NTLM
 Net-Ping                net-ping
 Net-SFTP                net-sftp

@@ -3,17 +3,40 @@
 use strict;
 use warnings;
 
-use Test::More tests => 4;
+use Test::More tests => 1 + 7 + 9;
 
 use CPANPLUS::Dist::Gentoo::Maps;
 
-our %gentooisms;
-*gentooisms = \%CPANPLUS::Dist::Gentoo::Maps::gentooisms;
+*nc2g = \&CPANPLUS::Dist::Gentoo::Maps::name_c2g;
 
-is scalar(keys %gentooisms), 76, 'gentooisms are all there';
+is nc2g('CPANPLUS-Dist-Gentoo'), 'CPANPLUS-Dist-Gentoo', 'name_c2g returns non gentooisms correctly';
 
-is $gentooisms{PathTools}, 'File-Spec', 'gentooisms were correctly loaded';
+my %core_gentooisms = (
+ 'ANSIColor'       => 'Term-ANSIColor',
+ 'Digest'          => 'digest-base',
+ 'I18N-LangTags'   => 'i18n-langtags',
+ 'Locale-Maketext' => 'locale-maketext',
+ 'Net-Ping'        => 'net-ping',
+ 'Pod-Parser'      => 'PodParser',
+ 'PathTools'       => 'File-Spec',
+);
 
-is CPANPLUS::Dist::Gentoo::Maps::name_c2g('PathTools'), 'File-Spec', 'name_c2g maps gentooisms correctly';
+for my $dist (sort keys %core_gentooisms) {
+ is nc2g($dist), $core_gentooisms{$dist}, "name_c2g('$dist')";
+}
 
-is CPANPLUS::Dist::Gentoo::Maps::name_c2g('CPANPLUS-Dist-Gentoo'), 'CPANPLUS-Dist-Gentoo', 'name_c2g returns non gentooisms correctly';
+my %cpan_gentooisms = (
+ 'CGI-Simple'    => 'Cgi-Simple',
+ 'Date-Manip'    => 'DateManip',
+ 'Gtk2'          => 'gtk2-perl',
+ 'Log-Dispatch'  => 'log-dispatch',
+ 'Math-Pari'     => 'math-pari',
+ 'Regexp-Common' => 'regexp-common',
+ 'Tk'            => 'perl-tk',
+ 'Wx'            => 'wxperl',
+ 'YAML'          => 'yaml',
+);
+
+for my $dist (sort keys %cpan_gentooisms) {
+ is nc2g($dist), $cpan_gentooisms{$dist}, "name_c2g('$dist')";
+}

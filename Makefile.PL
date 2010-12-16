@@ -61,3 +61,12 @@ WriteMakefile(
   FILES => "$dist-* *.gcov *.gcda *.gcno cover_db Debian_CPANTS.txt"
  },
 );
+
+package MY;
+
+sub postamble {
+ <<POSTAMBLE
+regen:
+	\$(PERL) samples/gengentooisms
+POSTAMBLE
+}

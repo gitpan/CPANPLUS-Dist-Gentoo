@@ -9,11 +9,11 @@ CPANPLUS::Dist::Gentoo::Atom - Gentoo atom object.
 
 =head1 VERSION
 
-Version 0.10
+Version 0.11
 
 =cut
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 =head1 DESCRIPTION
 
@@ -32,7 +32,10 @@ use overload (
 
 use CPANPLUS::Dist::Gentoo::Version;
 
-my $version_rx = $CPANPLUS::Dist::Gentoo::Version::version_rx;
+my $range_rx    = qr/(?:<|<=|=|>=|>)/;
+my $name_rx     = qr/[a-zA-Z0-9_+-]+/;
+my $category_rx = $name_rx;
+my $version_rx  = $CPANPLUS::Dist::Gentoo::Version::version_rx;
 
 =head1 METHODS
 
@@ -50,12 +53,13 @@ sub new {
 
  my ($range, $category, $name, $version);
  if (defined $args{name}) {
-  ($range, $category, $name, $version) = @args{qw/range category name version/};
+  ($range, $category, $name, $version) = @args{qw<range category name version>};
   Carp::confess('Category unspecified') unless defined $category;
-  /[^\w-]/ and Carp::confess('Invalid argument') for $name, $category;
+  Carp::confess('Invalid category')     unless $category =~ /^$category_rx$/o;
+  Carp::confess('Invalid name')         unless $name     =~ /^$name_rx$/o;
  } elsif (defined $args{atom}) {
   my $atom = $args{atom};
-  $atom =~ m{^(<|<=|=|>=|>)?([\w-]+)/([\w-]+)(?:-v?($version_rx))?$}
+  $atom =~ m{^($range_rx)?($category_rx)/($name_rx)(?:-($version_rx))?$}o
                                                or Carp::confess('Invalid atom');
   ($range, $category, $name, $version) = ($1, $2, $3, $4);
  } else {
@@ -64,17 +68,16 @@ sub new {
 
  if (defined $version) {
   unless (Scalar::Util::blessed($version)
-                              and $_->isa('CPANPLUS::Dist::Gentoo::Version')) {
+          and $version->isa('CPANPLUS::Dist::Gentoo::Version')) {
    $version = CPANPLUS::Dist::Gentoo::Version->new($version);
   }
  }
 
  if (defined $version) {
   if (defined $range) {
-   Carp::confess("Invalid range $range")
-                                      unless grep $range eq $_, qw|< <= = >= >|;
+   Carp::confess("Invalid range $range") unless $range =~ /^$range_rx$/o;
   } else {
-   $range = '=';
+   $range = '>=';
   }
  } else {
   Carp::confess('Range atoms require a valid version')
@@ -103,7 +106,7 @@ sub new_from_ebuild {
  my $ebuild = shift;
  $ebuild = '' unless defined $ebuild;
 
- $ebuild =~ m{/([\w-]+)/([\w-]+)/\2-v?($version_rx)\.ebuild$}
+ $ebuild =~ m{/($category_rx)/($name_rx)/\2-($version_rx)\.ebuild$}o
                                              or Carp::confess('Invalid ebuild');
  my ($category, $name, $version) = ($1, $2, $3);
 
@@ -116,7 +119,7 @@ sub new_from_ebuild {
 }
 
 BEGIN {
- eval "sub $_ { \$_[0]->{$_} }" for qw/category name version range ebuild/;
+ eval "sub $_ { \$_[0]->{$_} }" for qw<category name version range ebuild>;
 }
 
 =head2 C<category>
@@ -189,20 +192,21 @@ sub _spaceship {
 sub _cmp {
  my ($a1, $a2, $r) = @_;
 
- my $s1 = $a1->qualified_name;
- my $v1 = $a1->version;
- $s1   .= "-$v1" if defined $v1;
+ if (defined $a2) {
+  my $p1 = $a1->qualified_name;
 
- my $s2;
- if (Scalar::Util::blessed($a2) and $a2->isa(__PACKAGE__)) {
-  $s2    = $a2->qualified_name;
-  my $v2 = $a2->version;
-  $s2   .= "-$v2" if defined $v2;
- } else {
-  $s2 = $a2;
+  unless (Scalar::Util::blessed($a2) && $a2->isa(__PACKAGE__)) {
+   $a2 = eval { __PACKAGE__->new(atom => $a2) };
+   Carp::confess("Can't compare an atom against something that's not an atom or an atom string ($@)") if $@;
+  }
+  my $p2 = $a2->qualified_name;
+
+  if (my $c = $p1 cmp $p2) {
+   return $r ? -$c : $c;
+  }
  }
 
- $s1 cmp $s2;
+ $a1 <=> $a2;
 }
 
 sub _stringify {
@@ -291,7 +295,7 @@ sub fold {
   $seen{$key} = defined $cur ? $cur->and($atom) : $atom;
  }
 
- return values %seen;
+ return map $seen{$_}, sort keys %seen;
 }
 
 =pod

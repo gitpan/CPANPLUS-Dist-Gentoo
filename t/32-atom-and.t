@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 2 * (2 + (8 * 7) / 2 + 2);
+use Test::More tests => 2 * (2 + (8 * 7) / 2 + 2) + 3 * 4;
 
 use CPANPLUS::Dist::Gentoo::Atom;
 
@@ -123,3 +123,41 @@ for my $t (@tests) {
   }
  }
 }
+
+my $a1b = A->new(
+ category => 'test',
+ name     => 'a',
+ version  => '1.0',
+);
+
+my $b1 = A->new(
+ category => 'test',
+ name     => 'b',
+ version  => '1.0',
+ range    => '<',
+);
+
+my $b2 = A->new(
+ category => 'test',
+ name     => 'b',
+ version  => '3.0',
+ range    => '<',
+);
+
+my @folded = eval { A->fold($a1b, $a5, $b1, $b2) };
+is $@,      '', 'aabb: no error';
+is @folded, 2,  'aabb: fold results in two atoms';
+ok $folded[0] == $a5, 'aabb: first result is >=test/a-2.0';
+ok $folded[1] == $b1, 'aabb: second result is <test/b-1.0';
+
+@folded = eval { A->fold($a1b, $b1, $b2, $a5) };
+is $@,      '', 'abba: no error';
+is @folded, 2,  'abba: fold results in two atoms';
+ok $folded[0] == $a5, 'abba: first result is >=test/a-2.0';
+ok $folded[1] == $b1, 'abba: second result is <test/b-1.0';
+
+@folded = eval { A->fold($a1b, $b1, $a5, $b2) };
+is $@,      '', 'abab: no error';
+is @folded, 2,  'abab: fold results in two atoms';
+ok $folded[0] == $a5, 'abab: first result is >=test/a-2.0';
+ok $folded[1] == $b1, 'abab: second result is <test/b-1.0';

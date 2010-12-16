@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 6 * ((8 * 7) / 2);
+use Test::More tests => 2 * 8 * ((8 * 7) / 2);
 
 use CPANPLUS::Dist::Gentoo::Atom;
 
@@ -98,8 +98,12 @@ sub compare_ok {
 
  my $desc = join " $cmp ", map "'$_'", $a, $b;
 
- my $c   = eval "\$a $cmp \$b";
- my $err = $@;
+ my ($err, $c);
+ {
+  local $@;
+  $c   = eval "\$a $cmp \$b";
+  $err = $@;
+ }
 
  if (ref $exp eq 'Regexp') {
   like $err, $exp, "$desc should fail";
@@ -120,7 +124,27 @@ for my $t (@tests) {
   }
 
   compare_ok($a, '<=>', $b, $exp);
-  compare_ok($a, '<=>', "$b", $exp);
+
+  my $bs = "$b";
+  compare_ok($a, '<=>', $bs, $exp);
+
+  my $bv = $b->version;
+  if (defined $bv) {
+   compare_ok($a, '<=>', $bv,   $exp);
+   compare_ok($a, '<=>', "$bv", $exp);
+  } else {
+   pass("$bs has no version part ($_)") for 1, 2;
+  }
+
   compare_ok($a, 'cmp', $b, $exp);
+
+  my $bz = $b->qualified_name;
+  $bz   .= "-$bv" if defined $bv;
+  compare_ok($a, 'cmp', $bz, $exp);
+
+  $bz  = "test/zzz";
+  $bz .= "-$bv" if defined $bv;
+  compare_ok($a,  'cmp', $bz, -1);
+  compare_ok($bz, 'cmp', $b,  1);
  }
 }
