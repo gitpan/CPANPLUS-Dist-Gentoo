@@ -2,7 +2,7 @@ NAME
     CPANPLUS::Dist::Gentoo - CPANPLUS backend generating Gentoo ebuilds.
 
 VERSION
-    Version 0.11
+    Version 0.12
 
 SYNOPSIS
         # Using default values from your make.conf
@@ -18,7 +18,7 @@ SYNOPSIS
                   --dist-opts footer="# End" \
                   Any::Module You::Like
 
-DESCRPITON
+DESCRIPTION
     This module is a CPANPLUS backend that recursively generates Gentoo
     ebuilds for a given package in the default overlay, updates the
     manifest, and even emerges it (together with its dependencies) if the
@@ -26,7 +26,9 @@ DESCRPITON
 
     The generated ebuilds are placed into the "perl-gcpanp" category. They
     favour depending on a "virtual", on "perl-core", "dev-perl" or
-    "perl-gcpan" (in that order) rather than "perl-gcpanp".
+    "perl-gcpan" (in that order) rather than "perl-gcpanp". Existing ebuilds
+    will be searched into the main "PORTDIR" portage tree and then into the
+    overlays listed in "PORTDIR_OVERLAY".
 
 OPTIONS
     You can pass specific options to cpan2dist by using the "--dist-opts"
@@ -45,27 +47,27 @@ OPTIONS
 
     *   "overlay"
 
-        A string formatted as a space-delimited sequence of paths, that
-        lists the different overlays in which existent ebuilds will be
-        looked for.
+        The path of the overlay in which the generated ebuilds will be
+        written.
 
-        Defaults to the value of "PORTDIR_OVERLAY" as returned by "emerge
-        --info" (usually /usr/local/portage).
+        Defaults to the first overlay listed in "PORTDIR_OVERLAY" (as
+        returned by "emerge --info") or /usr/local/portage if this variable
+        is empty.
 
     *   "distdir"
 
         The directory where "ebuild" expects to find the source tarballs.
         You need write permissions on this directory.
 
-        Defaults to the value of "DISTDIR" as returned by "emerge --info"
-        (usually /usr/portage/distfiles).
+        Defaults to the value of "DISTDIR" (as returned by "emerge --info")
+        or /usr/portage/distfiles if this variable is empty.
 
     *   "keywords"
 
         The valid "KEYWORDS" for the generated ebuilds.
 
-        Defaults to the value of "ACCEPT_KEYWORDS" as returned by "emerge
-        --info".
+        Defaults to the value of "ACCEPT_KEYWORDS" (as returned by "emerge
+        --info") or 'x86' if this variable is empty.
 
     *   "header"
 
@@ -126,13 +128,13 @@ INSTALLATION
         Then, fetch the CPANPLUS::Dist::Gentoo tarball :
 
             $ cd /tmp
-            $ wget http://search.cpan.org/CPAN/authors/id/V/VP/VPIT/CPANPLUS-Dist-Gentoo-0.11.tar.gz
+            $ wget http://search.cpan.org/CPAN/authors/id/V/VP/VPIT/CPANPLUS-Dist-Gentoo-0.12.tar.gz
 
         Log in as root and unpack it in e.g. your home directory :
 
             # cd
-            # tar xzf /tmp/CPANPLUS-Dist-Gentoo-0.11.tar.gz
-            # cd CPANPLUS-Dist-Gentoo-0.11
+            # tar xzf /tmp/CPANPLUS-Dist-Gentoo-0.12.tar.gz
+            # cd CPANPLUS-Dist-Gentoo-0.12
 
         Bootstrap CPANPLUS::Dist::Gentoo using the bundled shell script
         "g-cpanp" :
@@ -204,7 +206,7 @@ ACKNOWLEDGEMENTS
     Kent Fredric, for testing and suggesting improvements.
 
 COPYRIGHT & LICENSE
-    Copyright 2008,2009,2010 Vincent Pit, all rights reserved.
+    Copyright 2008,2009,2010,2011,2012 Vincent Pit, all rights reserved.
 
     This program is free software; you can redistribute it and/or modify it
     under the same terms as Perl itself.

@@ -9,11 +9,11 @@ CPANPLUS::Dist::Gentoo::Version - Gentoo version object.
 
 =head1 VERSION
 
-Version 0.11
+Version 0.12
 
 =cut
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 =head1 DESCRIPTION
 
@@ -28,10 +28,9 @@ use overload (
  '""'  => \&_stringify,
 );
 
-my $int_rx          = qr/[0-9]+/;
-my $positive_int_rx = qr/0*[1-9][0-9]*/;
-my $letter_rx       = qr/[a-zA-Z]/;
-my $dotted_num_rx   = qr/$int_rx(?:\.$int_rx)*/o;
+my $int_rx        = qr/[0-9]+/;
+my $letter_rx     = qr/[a-zA-Z]/;
+my $dotted_num_rx = qr/$int_rx(?:\.$int_rx)*/o;
 
 my @suffixes  = qw<alpha beta pre rc normal p>;
 my $suffix_rx = join '|', grep !/^normal$/, @suffixes;
@@ -39,14 +38,14 @@ $suffix_rx    = qr/(?:$suffix_rx)/o;
 
 our $version_rx = qr{
  $dotted_num_rx $letter_rx?
- (?:_$suffix_rx$positive_int_rx?)*
- (?:-r$positive_int_rx)?
+ (?:_$suffix_rx$int_rx?)*
+ (?:-r$int_rx)?
 }xo;
 
 my $capturing_version_rx = qr{
  ($dotted_num_rx) ($letter_rx)?
- ((?:_$suffix_rx$positive_int_rx?)*)
- (?:-r($positive_int_rx))?
+ ((?:_$suffix_rx$int_rx?)*)
+ (?:-r($int_rx))?
 }xo;
 
 =head1 METHODS
@@ -71,7 +70,7 @@ sub new {
     string   => $vstring,
     version  => [ split /\.+/, $1 ],
     letter   => $2,
-    suffixes => [ map /_($suffix_rx)($positive_int_rx)?/go, $3 ],
+    suffixes => [ map /_($suffix_rx)($int_rx)?/go, $3 ],
     revision => $4,
    }, $class;
   }
@@ -126,12 +125,28 @@ sub _spaceship {
   my @a = @{ $v1->version };
   my @b = @{ $v2->version };
 
-  while (@a or @b) {
-   my $x = shift(@a) || 0;
-   my $y = shift(@b) || 0;
+  {
+   my $x = shift @a;
+   my $y = shift @b;
    my $c = $x <=> $y;
    return $c if $c;
   }
+
+  while (@a and @b) {
+   my $x = shift @a;
+   my $y = shift @b;
+   my $c;
+   if ($x =~ /^0/ or $y =~ /^0/) {
+    s/0+\z// for $x, $y;
+    $c = $x cmp $y;
+   } else {
+    $c = $x <=> $y;
+   }
+   return $c if $c;
+  }
+
+  return  1 if @a;
+  return -1 if @b;
  }
 
  {
@@ -188,7 +203,7 @@ sub _stringify {
 
 =pod
 
-This class provides overloaded methods for numerical comparison and strigification.
+This class provides overloaded methods for numerical comparison and stringification.
 
 =head1 SEE ALSO
 
@@ -213,7 +228,7 @@ You can find documentation for this module with the perldoc command.
 
 =head1 COPYRIGHT & LICENSE
 
-Copyright 2009,2010 Vincent Pit, all rights reserved.
+Copyright 2009,2010,2011,2012 Vincent Pit, all rights reserved.
 
 This program is free software; you can redistribute it and/or modify it under the same terms as Perl itself.
 

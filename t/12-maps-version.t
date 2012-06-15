@@ -12,25 +12,25 @@ use CPANPLUS::Dist::Gentoo::Maps;
  goto &CPANPLUS::Dist::Gentoo::Maps::version_c2g
 };
 
-is vc2g('1'),       '1',      "version_c2g('1')";
-is vc2g('v1'),      '1',      "version_c2g('v1')";
-is vc2g('..1'),     '1',      "version_c2g('..1')";
-is vc2g('1.0'),     '1.0',    "version_c2g('1.0')";
-is vc2g('v1.0'),    '1.0',    "version_c2g('v1.0')";
-is vc2g('1._0'),    '1.0',    "version_c2g('1._0')";
-is vc2g('1_1'),     '1_p1',   "version_c2g('1_1')";
-is vc2g('1_.1'),    '1_p1',   "version_c2g('1_.1')";
-is vc2g('1_.1._2'), '1_p1.2', "version_c2g('1_.1._2')";
-is vc2g('1_.1_2'),  '1_p12',  "version_c2g('1_.1_2')";
-is vc2g('1_.1_.2'), '1_p12',  "version_c2g('1_.1_.2')";
+is vc2g('1'),       '1.0.0',      "version_c2g('1')";
+is vc2g('v1'),      '1',          "version_c2g('v1')";
+is vc2g('..1'),     '1.0.0',      "version_c2g('..1')";
+is vc2g('1.0'),     '1.0.0',      "version_c2g('1.0')";
+is vc2g('v1.0'),    '1.0',        "version_c2g('v1.0')";
+is vc2g('1._0'),    '1.0.0_rc',   "version_c2g('1._0')";
+is vc2g('1_1'),     '11.0.0_rc',  "version_c2g('1_1')";
+is vc2g('1_.1'),    '1.100.0_rc', "version_c2g('1_.1')";
+is vc2g('1_.1._2'), '1.1.2_rc',   "version_c2g('1_.1._2')";
+is vc2g('1_.1_2'),  '1.120.0_rc', "version_c2g('1_.1_2')";
+is vc2g('1_.1_.2'), '1.1.2_rc',   "version_c2g('1_.1_.2')";
 
-for my $test ([ '0.12' => '0.12' ], [ '0.1234' => '0.12.34' ]) {
+for my $test ([ '0.12' => '0.12' ], [ '0.1234' => '0.1234' ]) {
  my @dists = qw<
-  ExtUtils-CBuilder
-  ExtUtils-ParseXS
-  Module-Build
-  Time-HiRes
-  Time-Local
+  ExtUtils-Install
+  File-Path
+  I18N-LangTags
+  IO
+  Time-Piece
  >;
  for my $dist (@dists) {
   is vc2g($dist, $test->[0]), $test->[1], "'version_c2g('$dist', '$test->[0]')";

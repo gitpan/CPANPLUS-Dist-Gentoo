@@ -9,11 +9,11 @@ CPANPLUS::Dist::Gentoo::Atom - Gentoo atom object.
 
 =head1 VERSION
 
-Version 0.11
+Version 0.12
 
 =cut
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 =head1 DESCRIPTION
 
@@ -300,7 +300,7 @@ sub fold {
 
 =pod
 
-This class provides overloaded methods for numerical comparison, string comparison and strigification.
+This class provides overloaded methods for numerical comparison, string comparison and stringification.
 
 =head1 SEE ALSO
 
@@ -325,7 +325,7 @@ You can find documentation for this module with the perldoc command.
 
 =head1 COPYRIGHT & LICENSE
 
-Copyright 2009,2010 Vincent Pit, all rights reserved.
+Copyright 2009,2010,2011,2012 Vincent Pit, all rights reserved.
 
 This program is free software; you can redistribute it and/or modify it under the same terms as Perl itself.
 

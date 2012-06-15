@@ -3,19 +3,22 @@ package CPANPLUS::Dist::Gentoo::Maps;
 use strict;
 use warnings;
 
+use File::Spec;
+use POSIX ();
+
 =head1 NAME
 
-CPANPLUS::Dist::Gentoo::Maps - Map CPAN objects to Gentoo and vice versa.
+CPANPLUS::Dist::Gentoo::Maps - Map CPAN distribution names, version numbers and license identifiers to their Gentoo counterparts.
 
 =head1 VERSION
 
-Version 0.11
+Version 0.12
 
 =cut
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
-=head1 DESCRPITON
+=head1 DESCRIPTION
 
 This is an helper package to L<CPANPLUS::Dist::Gentoo>.
 
@@ -31,7 +34,7 @@ close DATA;
 
 =head2 C<name_c2g $name>
 
-Maps a CPAN distribution name to its Gentoo counterpart.
+Maps a CPAN distribution name to the corresponding Gentoo package name.
 
 =cut
 
@@ -42,7 +45,7 @@ sub name_c2g {
 
 =head2 C<license_c2g @licenses>
 
-Maps F<META.yml> C<license> tag values to the corresponding list of Gentoo licenses identifiers.
+Maps F<META.yml> C<license> tag values to the corresponding list of Gentoo license identifiers.
 Duplicates are stripped off.
 
 The included data was gathered from L<Module::Install> and L<Software::License>.
@@ -76,173 +79,203 @@ sub license_c2g {
 
 =head2 C<version_c2g $name, $version>
 
-Converts the C<$version> of a CPAN distribution C<$name> to a Gentoo version.
+Converts the C<$version> of a CPAN distribution C<$name> to a Gentoo version number.
 
 =cut
 
 my $default_mapping = sub {
- my ($v) = @_;
+ my ($version, @no_strip) = @_;
 
- $v =~ s/^v//;
- $v =~ y/-/_/;
+ my $is_dev = $version =~ /_/;
+ my $has_v  = $version =~ s/^v//;
 
- $v =~ s/^[._]*//;
- $v =~ s/[._]*$//;
- $v =~ s/([._])[._]*/$1/g;
-
- ($v, my $patch) = split /_/, $v, 2;
- if (defined $patch) {
-  $patch =~ s/_//g;
-  $v .= "_p$patch";
+ for ($version) {
+  y/_-//d;
+  s/^\.*//;
+  s/\.*\z//;
+  s/\.+/./g;
  }
 
- return $v;
-};
+ my $dots   = $version =~ y/\.//;
 
-my $insert_dot_at = sub {
- my ($v, $pos, $all) = @_;
-
- my ($int, $frac) = split /\./, $v, 2;
- return $v unless defined $frac;
-
- my @p;
- push @p, $-[0] while $frac =~ /[0-9]/g;
- my %digit = map { $_ => 1 } @p;
-
- my $shift = 0;
- for (my $i = $pos; $i < @p; $i += $pos) {
-  if ($digit{$i}) {
-   substr($frac, $i + $shift, 0) = '.';
-   ++$shift;
+ my @parts;
+ if ($has_v or $dots >= 2) {
+  @parts = split /\./, $version;
+ } else {
+  ($parts[0], my $subversion) = split /\./, $version, 2;
+  $subversion = '0' unless defined $subversion;
+  my $sublen = length $subversion;
+  if ($sublen < 6) {
+   $subversion .= '0' x (6 - $sublen);
+  } else {
+   my $pad = $sublen % 3;
+   $subversion .= '0' x (3 - $pad) if $pad;
   }
-  last unless $all;
+  push @parts, $subversion =~ /(...)/g;
  }
 
- "$int.$frac";
+ for my $i (0 .. $#parts) {
+  next if $no_strip[$i];
+  $parts[$i] =~ s/^0+([^0]|0\z)/$1/;
+ }
+ $version  = join '.', @parts;
+
+ $version .= '_rc' if $is_dev;
+
+ return $version;
 };
 
-my $insert_dot_at_1     = sub { $insert_dot_at->($_[0], 1, 0) },
-my $insert_dot_at_all_1 = sub { $insert_dot_at->($_[0], 1, 1) },
-my $insert_dot_at_2     = sub { $insert_dot_at->($_[0], 2, 0) },
-my $insert_dot_at_all_2 = sub { $insert_dot_at->($_[0], 2, 1) },
-my $insert_dot_at_all_3 = sub { $insert_dot_at->($_[0], 3, 1) },
+my $default_but_ignore_v = sub {
+ my ($version) = @_;
 
-my $pad_decimals_to = sub {
- my ($v, $n) = @_;
+ $version =~ s/^v//;
 
- my ($int, $frac) = split /\./, $v, 2;
- return $v unless defined $v;
+ return $default_mapping->($version);
+};
 
- my $l = length $frac;
- if ($l < $n) {
-  $frac .= '0' x ($n - $l);
+my $default_but_no_strip_1 = sub {
+ return $default_mapping->($_[0], 0, 1);
+};
+
+my $default_but_no_strip_2 = sub {
+ return $default_mapping->($_[0], 0, 1, 1);
+};
+
+my $insert_dot_every = sub {
+ my ($version, $step) = @_;
+
+ my $is_dev = $version =~ /_/;
+
+ for ($version) {
+  s/^v//;
+  y/_-//d;
+  s/^\.*//;
+  s/\.*\z//;
+  s/\.+/./g;
  }
 
- "$int.$frac";
+ my @parts;
+ ($parts[0], my $subversion) = split /\./, $version, 2;
+ $subversion =~ s/\.//g;
+ my $pat = sprintf '.{1,%d}', $step || 1;
+ push @parts, $subversion =~ /($pat)/g;
+
+ s/^0+([^0]|0\z)/$1/ for @parts;
+ $version = join '.', @parts;
+
+ $version .= '_rc' if $is_dev;
+
+ return $version;
 };
 
-my $pad_decimals_to_2 = sub { $pad_decimals_to->($_[0], 2) };
-my $pad_decimals_to_4 = sub { $pad_decimals_to->($_[0], 4) };
+my $simple_cleanup = sub {
+ my ($version) = @_;
 
-my $correct_suffixes = sub {
- my ($v) = @_;
+ my $is_dev = $version =~ /_/;
 
- $v = $default_mapping->($v);
- $v =~ s/(?<!_)((?:alpha|beta|pre|rc|p)\d*)\b/_$1/g;
+ for ($version) {
+  s/^v//;
+  y/_-//d;
+  s/^\.*//;
+  s/\.*\z//;
+  s/\.+/./g;
+ }
 
- return $v;
+ $version .= '_rc' if $is_dev;
+
+ return $version;
 };
 
-my $strip_letters = sub {
- my ($v) = @_;
+my $simple_and_correct_suffixes = sub {
+ my ($version) = @_;
 
- $v = $default_mapping->($v);
- $v =~ s/(?<=\d)[a-z]+//g;
+ $version = $simple_cleanup->($version);
+ $version =~ s/(?<!_)((?:alpha|beta|pre|rc|p)\d*)\b/_$1/g;
 
- return $v;
+ return $version;
 };
 
-my $letters_as_suffix = sub {
- my ($v) = @_;
+my $simple_and_strip_letters = sub {
+ my ($version) = @_;
 
- $v = $default_mapping->($v);
- $v =~ s/(?<=\d)b(?=\d)/_beta/g;
+ $version = $simple_cleanup->($version);
+ $version =~ s/(?<=\d)[a-z]+//g;
 
- return $v;
+ return $version;
+};
+
+my $simple_and_letters_as_suffix = sub {
+ my ($version) = @_;
+
+ $version = $simple_cleanup->($version);
+ $version =~ s/(?<=\d)b(?=\d)/_beta/g;
+
+ return $version;
 };
 
 my %version_mismatch;
 
-$version_mismatch{$_} = $insert_dot_at_1 for qw<
- CGI-Simple
+$version_mismatch{$_} = $default_but_ignore_v for qw<
+ Net-DNS-Resolver-Programmable
 >;
 
-$version_mismatch{$_} = $insert_dot_at_all_1 for qw<
- AnyEvent
- Archive-Rar
- IO-AIO
- Image-Size
- Linux-Inotify2
- PadWalker
- Tie-Array-Sorted
- Tk-TableMatrix
- XML-RSS-Feed
+$version_mismatch{$_} = $default_but_no_strip_1 for qw<
+ Crypt-RC4
+ File-Grep
+ MogileFS-Client-Async
+ MogileFS-Network
 >;
 
-$version_mismatch{$_} = $insert_dot_at_2 for qw<
- Error
+$version_mismatch{$_} = $default_but_no_strip_2 for qw<
+ Net-IMAP-Simple
 >;
 
-$version_mismatch{$_} = $insert_dot_at_all_2 for qw<
- Authen-Htpasswd
- BSD-Resource
- CDDB
- Cairo
- Curses-UI
- DBD-mysql
- Email-MessageID
- Exception-Base
- ExtUtils-CBuilder
- ExtUtils-ParseXS
- FileHandle-Unget
- FreezeThaw
- Lexical-Persistence
- Lingua-EN-Inflect
- Mail-Mbox-MessageParser
- Module-Build
- SQL-Abstract-Limit
- Term-ReadLine-Perl
- Test-Differences
- Time-HiRes
- Time-Local
- perl-ldap
+$version_mismatch{$_} = sub { $insert_dot_every->($_[0], 1) } for qw<
+ HTTP-Cookies
+ HTTP-Negotiate
 >;
 
-$version_mismatch{$_} = $insert_dot_at_all_3 for qw<
- Parse-RecDescent
- Return-Value
+$version_mismatch{$_} = sub { $insert_dot_every->($_[0], 3) } for qw<
+ POE-Component-IKC
 >;
 
-$version_mismatch{$_} = $pad_decimals_to_2 for qw<
- Nmap-Parser
- XML-AutoWriter
+$version_mismatch{$_} = $simple_cleanup for qw<
+ Alien-SDL
+ CGI-SpeedyCGI
+ Class-ISA
+ Data-Uniqid
+ ExtUtils-Install
+ File-Path
+ Getopt-GUI-Long
+ Gtk2-Notify
+ HTML-Table
+ I18N-LangTags
+ IO
+ IPC-System-Simple
+ Lab-Measurement
+ Log-TraceMessages
+ MusicBrainz-DiscID
+ Net-IRC
+ Net-Ping
+ SDL
+ SOAP-WSDL
+ TeX-Encode
+ Tie-Simple
+ Time-Piece
+ WattsUp-Daemon
 >;
 
-$version_mismatch{$_} = $pad_decimals_to_4 for qw<
- Convert-BER
->;
-
-$version_mismatch{$_} = $correct_suffixes for qw<
+$version_mismatch{$_} = $simple_and_correct_suffixes for qw<
  Gimp
  XML-Grove
 >;
 
-$version_mismatch{$_} = $strip_letters for qw<
+$version_mismatch{$_} = $simple_and_strip_letters for qw<
  DelimMatch
  SGMLSpm
 >;
 
-$version_mismatch{$_} = $letters_as_suffix for qw<
+$version_mismatch{$_} = $simple_and_letters_as_suffix for qw<
  Frontier-RPC
 >;
 
@@ -260,7 +293,7 @@ sub version_c2g {
 
 =head2 C<perl_version_c2g $version>
 
-Converts a perl version as you can find it in prerequisites to a Gentoo version number.
+Converts a perl version number as you can find it in CPAN prerequisites to a Gentoo version number.
 
 =cut
 
@@ -282,6 +315,56 @@ sub perl_version_c2g {
 
  return join '.', map int, @parts;
 }
+
+=head2 C<get_portage_timestamp $portage>
+
+Get the numerical timestamp associated with the portage tree located at C<$portage>.
+Requires L<POSIX::strptime>, and returns C<undef> if it is not available.
+
+=cut
+
+sub get_portage_timestamp {
+ my ($portage) = @_;
+
+ {
+  local $@;
+  eval { require POSIX::strptime } or return;
+ }
+
+ my $file = File::Spec->catfile($portage, 'metadata', 'timestamp.chk');
+ return unless -e $file;
+
+ my $timestamp = do {
+  open my $fh, '<', $file or return;
+  local $/;
+  <$fh>;
+ };
+ s/^\s*//, s/\s*$// for $timestamp;
+
+ my $shift = 0;
+ if ($timestamp =~ s/\s+([+-])([0-9]{2})([0-9]{2})$//) {
+  $shift = ($2 * 60 + $3) * 60;
+  $shift = -$shift if $1 eq '-';
+ }
+
+ my $old_lc_all = POSIX::setlocale(POSIX::LC_ALL());
+ POSIX::setlocale(POSIX::LC_ALL(), 'C');
+ $timestamp = POSIX::mktime(
+  POSIX::strptime($timestamp, '%a, %d %b %Y %H:%M:%S')
+ );
+ POSIX::setlocale(POSIX::LC_ALL(), $old_lc_all);
+ $timestamp += $shift;
+
+ return $timestamp;
+}
+
+=head2 C<TIMESTAMP>
+
+Numerical timestamp associated with the revision of the portage tree that was used for generating the corrections to the natural cpan-to-gentoo mapping listed in this module.
+
+=cut
+
+sub TIMESTAMP () { 1339737301 }
 
 =head1 SEE ALSO
 
@@ -306,7 +389,7 @@ You can find documentation for this module with the perldoc command.
 
 =head1 COPYRIGHT & LICENSE
 
-Copyright 2009,2010 Vincent Pit, all rights reserved.
+Copyright 2009,2010,2011,2012 Vincent Pit, all rights reserved.
 
 This program is free software; you can redistribute it and/or modify it under the same terms as Perl itself.
 
@@ -315,7 +398,6 @@ This program is free software; you can redistribute it and/or modify it under th
 1; # End of CPANPLUS::Dist::Gentoo::Maps
 
 __DATA__
-ANSIColor               Term-ANSIColor
 AcePerl                 Ace
 CGI-Simple              Cgi-Simple
 CGI-SpeedyCGI           SpeedyCGI
@@ -348,7 +430,6 @@ Glib                    glib-perl
 Gnome2                  gnome2-perl
 Gnome2-Canvas           gnome2-canvas
 Gnome2-GConf            gnome2-gconf
-Gnome2-Print            gnome2-print
 Gnome2-VFS              gnome2-vfs-perl
 Gnome2-Wnck             gnome2-wnck
 Gtk2                    gtk2-perl
@@ -380,14 +461,15 @@ PathTools               File-Spec
 Perl-Tidy               perltidy
 Pod-Parser              PodParser
 Regexp-Common           regexp-common
-SDL_Perl                sdl-perl
 Set-Scalar              set-scalar
 String-CRC32            string-crc32
+Template-Plugin-Latex   Template-Latex
 Text-Autoformat         text-autoformat
 Text-Reform             text-reform
 Text-Template           text-template
 Text-Wrapper            text-wrapper
 Tie-EncryptedHash       tie-encryptedhash
+Time-Period             Period
 Tk                      perl-tk
 Wx                      wxperl
 XML-Sablotron           XML-Sablot

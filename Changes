@@ -1,5 +1,28 @@
 Revision history for CPANPLUS-Dist-Gentoo
 
+0.12    2012-06-15 10:45 UTC
+        + Add : The current portage tree timestamp is now checked during
+                initialization against the one corresponding to the portage
+                tree in use when gentooisms were generated. This works best
+                when POSIX::strptime is installed, but it is not explicitely
+                required in order to keep boostrapping this module easy.
+        + Chg : The default cpan-to-gentoo version mapping has been changed
+                to the new saner scheme now used by most ebuilds in the default
+                portage tree.
+        + Chg : When the 'overlay' option is unspecified, it now defaults to
+                the first overlay listed in PORTDIR_OVERLAY.
+        + Fix : Gentoo versions x.y.z.0 are now rightfully considered greater
+                than x.y.z.
+                Thanks Torsten Veller for bringing this to my attention.
+        + Fix : Leading zeros in version components of Gentoo versions are now
+                handled correctly.
+                Thanks Torsten Veller for bringing this to my attention.
+        + Fix : Gentoo versions with a zero as suffix or revision index are
+                now also handled correctly.
+        + Upd : Update gentooisms.
+        + Tst : t/99-kwalitee.t will be skipped when only problematic versions
+                of its dependencies are available.
+
 0.11    2010-12-16 18:15 UTC
         + Add : configure_requires dependencies are now listed in the DEPEND
                 section of the ebuild (in addition to RDEPEND dependencies).

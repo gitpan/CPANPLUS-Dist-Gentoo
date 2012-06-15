@@ -8,6 +8,7 @@ use List::Util qw<reduce>;
 use File::Copy ();
 use File::Path ();
 use File::Spec;
+use POSIX      ();
 
 use IPC::Cmd          ();
 use Parse::CPAN::Meta ();
@@ -26,11 +27,11 @@ CPANPLUS::Dist::Gentoo - CPANPLUS backend generating Gentoo ebuilds.
 
 =head1 VERSION
 
-Version 0.11
+Version 0.12
 
 =cut
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 =head1 SYNOPSIS
 
@@ -47,12 +48,13 @@ our $VERSION = '0.11';
               --dist-opts footer="# End" \
               Any::Module You::Like
 
-=head1 DESCRPITON
+=head1 DESCRIPTION
 
 This module is a CPANPLUS backend that recursively generates Gentoo ebuilds for a given package in the default overlay, updates the manifest, and even emerges it (together with its dependencies) if the user requires it.
 
 The generated ebuilds are placed into the C<perl-gcpanp> category.
 They favour depending on a C<virtual>, on C<perl-core>, C<dev-perl> or C<perl-gcpan> (in that order) rather than C<perl-gcpanp>.
+Existing ebuilds will be searched into the main C<PORTDIR> portage tree and then into the overlays listed in C<PORTDIR_OVERLAY>.
 
 =head1 OPTIONS
 
@@ -75,9 +77,9 @@ Defaults to C<yes>.
 
 C<overlay>
 
-A string formatted as a space-delimited sequence of paths, that lists the different overlays in which existent ebuilds will be looked for.
+The path of the overlay in which the generated ebuilds will be written.
 
-Defaults to the value of C<PORTDIR_OVERLAY> as returned by C<emerge --info> (usually F</usr/local/portage>).
+Defaults to the first overlay listed in C<PORTDIR_OVERLAY> (as returned by C<emerge --info>) or F</usr/local/portage> if this variable is empty.
 
 =item *
 
@@ -86,7 +88,7 @@ C<distdir>
 The directory where C<ebuild> expects to find the source tarballs.
 You need write permissions on this directory.
 
-Defaults to the value of C<DISTDIR> as returned by C<emerge --info> (usually F</usr/portage/distfiles>).
+Defaults to the value of C<DISTDIR> (as returned by C<emerge --info>) or F</usr/portage/distfiles> if this variable is empty.
 
 =item *
 
@@ -94,7 +96,7 @@ C<keywords>
 
 The valid C<KEYWORDS> for the generated ebuilds.
 
-Defaults to the value of C<ACCEPT_KEYWORDS> as returned by C<emerge --info>.
+Defaults to the value of C<ACCEPT_KEYWORDS> (as returned by C<emerge --info>) or C<'x86'> if this variable is empty.
 
 =item *
 
@@ -174,13 +176,13 @@ If you still have C<perl> C<5.8.x>, you can upgrade it by running the following 
 Then, fetch the L<CPANPLUS::Dist::Gentoo> tarball :
 
     $ cd /tmp
-    $ wget http://search.cpan.org/CPAN/authors/id/V/VP/VPIT/CPANPLUS-Dist-Gentoo-0.11.tar.gz
+    $ wget http://search.cpan.org/CPAN/authors/id/V/VP/VPIT/CPANPLUS-Dist-Gentoo-0.12.tar.gz
 
 Log in as root and unpack it in e.g. your home directory :
 
     # cd
-    # tar xzf /tmp/CPANPLUS-Dist-Gentoo-0.11.tar.gz
-    # cd CPANPLUS-Dist-Gentoo-0.11
+    # tar xzf /tmp/CPANPLUS-Dist-Gentoo-0.12.tar.gz
+    # cd CPANPLUS-Dist-Gentoo-0.12
 
 Bootstrap L<CPANPLUS::Dist::Gentoo> using the bundled shell script C<g-cpanp> :
 
@@ -267,6 +269,20 @@ sub format_available {
 
  $default_keywords = [ 'x86' ] unless defined $default_keywords;
  $default_distdir  = '/usr/portage/distfiles' unless defined $default_distdir;
+
+ my $timestamp = CPANPLUS::Dist::Gentoo::Maps::get_portage_timestamp(
+  $main_portdir
+ );
+ if (defined $timestamp) {
+  __PACKAGE__->_notify("Portage tree $main_portdir dates back from UNIX timestamp $timestamp");
+ } else {
+  __PACKAGE__->_notify("Unable to get timestamp for portage tree $main_portdir, using gmtime instead");
+  $timestamp = POSIX::mktime(gmtime);
+ }
+ if ($timestamp < CPANPLUS::Dist::Gentoo::Maps::TIMESTAMP) {
+  __PACKAGE__->_abort("Portage tree too old (please run emerge --sync and retry)");
+  return $format_available = 0;
+ }
 
  return $format_available = 1;
 }
@@ -360,7 +376,12 @@ sub prepare {
  $stat->footer($footer);
 
  my $overlay = delete $opts{overlay};
- $overlay = (defined $overlay) ? Cwd::abs_path($overlay) : '/usr/local/portage';
+ if (defined $overlay) {
+  $overlay   = Cwd::abs_path($overlay);
+ } else {
+  $overlay   = $overlays->[0];
+  $overlay   = '/usr/local/portage' unless defined $overlay;
+ }
  $stat->overlay($overlay);
 
  my $distdir = delete $opts{distdir};
@@ -889,7 +910,7 @@ Kent Fredric, for testing and suggesting improvements.
 
 =head1 COPYRIGHT & LICENSE
 
-Copyright 2008,2009,2010 Vincent Pit, all rights reserved.
+Copyright 2008,2009,2010,2011,2012 Vincent Pit, all rights reserved.
 
 This program is free software; you can redistribute it and/or modify it under the same terms as Perl itself.
 

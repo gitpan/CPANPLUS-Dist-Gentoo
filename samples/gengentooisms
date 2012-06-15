@@ -32,6 +32,8 @@ use constant STATE_FILE  => 'gentooisms.state.sto';
 
 my %is_on_cpan = (
  'Audio-CD-disc-cover' => 0,
+ 'Video-Frequencies'   => 0,
+ 'Sphinx-Search'       => 1,
  'WattsUp-Daemon'      => 1,
 );
 
@@ -41,15 +43,7 @@ sub p {
  printf $fmt, @args;
 }
 
-sub timestamp {
- my $tm = File::Spec->catfile(PORTAGE, 'metadata', 'timestamp.chk');
- return unless -e $tm;
- open my $fh, '<', $tm;
- local $/;
- <$fh>;
-}
-
-my $timestamp = timestamp();
+my $timestamp = CPANPLUS::Dist::Gentoo::Maps::get_portage_timestamp(PORTAGE);
 
 {
  my $ua;
@@ -85,8 +79,9 @@ sub parse_portage_tree {
    my $pkg_name = (File::Spec->splitdir($pkg_dir))[-1];
 
    my $last = reduce { $a->[1] > $b->[1] ? $a : $b }
-               map [ $_, CPANPLUS::Dist::Gentoo::Atom->new_from_ebuild($_) ],
-                glob File::Spec->catfile($pkg_dir, "$pkg_name-*");
+               grep $_->[1] != 9999,
+                map [ $_, CPANPLUS::Dist::Gentoo::Atom->new_from_ebuild($_) ],
+                 glob File::Spec->catfile($pkg_dir, "$pkg_name-*");
    my ($ebuild, $atom) = @$last;
    p(1, "%s/%s-%s\n", map $atom->$_, qw<category name version>);
 
@@ -111,10 +106,25 @@ sub parse_portage_tree {
      die "system(\"@cmd\") returned $ret and/or failed with status $code";
     }
 
-    while ($err =~ /SRC_URI=((['"]).*?\2|\S+)/gs) {
-     $uri = $1;
-     $uri =~ s{^(['"])(.*?)\1$}{$2}s;
+    my %map;
+    while ($err =~ /([a-zA-Z0-9_]+)=((['"]).*?\3|\S+)/gs) {
+     my $key = $1;
+     my $val = $2;
+     $val =~ s{^(['"])(.*?)\1$}{$2}s;
+     $map{$key} = $val;
     }
+
+    $uri = $map{SRC_URI};
+    unless (defined $uri) {
+     my $author = $map{MODULE_AUTHOR};
+     if (defined $author) {
+      my ($au, $a)     = $author =~ /^((.).)/;
+      my $dist_version = $map{MODULE_VERSION};
+      $dist_version    = $last->[1] unless defined $dist_version;
+      $uri = "mirror://cpan/$a/$au/$author/$pkg_name/$dist_version.tar.gz";
+     }
+    }
+
     $fetched_uri{$ebuild} = $uri;
     Storable::store([
      $timestamp,
@@ -177,6 +187,28 @@ sub parse_portage_tree {
      local $@;
      eval { $pcp->latest_distribution($pseudo_dist->dist) };
     };
+
+    unless (defined $latest_dist) {
+     print "no\n";
+     p(2, 'is similiar to a module indexed in another distribution of the CPAN... ');
+     (my $mod_name = $pkg_name) =~ s/-/::/g;
+     $latest_dist = do {
+      local $@;
+      eval {
+       my $module = $pcp->package($mod_name);
+       defined $module ? $module->distribution : undef;
+      };
+     };
+     if (defined $latest_dist) {
+      # Re-forge the pseudo dist so that it will pick up the correct dist
+      # name when looking for a mismatch.
+      $pseudo_dist = CPAN::DistnameInfo->new(
+       $latest_dist->dist . '-' . $pseudo_dist->version
+                          . '.' . $pseudo_dist->extension
+      );
+     }
+    }
+
     my ($latest_file, $latest_author);
     if (defined $latest_dist) {
      $latest_file   = $latest_dist->filename;
@@ -247,7 +279,7 @@ my $already_parsed = 0;
 
 if (-e STATE_FILE) {
  my $state = Storable::retrieve(STATE_FILE);
- if ($state->[0] eq $timestamp) {
+ if ($state->[0] == $timestamp) {
   printf "State retrieved from %s\n", STATE_FILE;
   @not_on_cpan   = @{ $state->[1] };
   @unfindable    = @{ $state->[2] };
@@ -264,7 +296,7 @@ if (-e STATE_FILE) {
 unless ($already_parsed) {
  if (-e DATA_FILE) {
   my $data = Storable::retrieve(DATA_FILE);
-  if ($data->[0] eq $timestamp) {
+  if ($data->[0] == $timestamp) {
    printf "Data retrieved from %s\n", DATA_FILE;
    %fetched_uri = %{ $data->[1] };
   } else {
@@ -343,11 +375,15 @@ open my $dst, '>', TARGET;
 my $max = max map length, keys %name_mismatch;
 
 SRC: while (<$src>) {
- print $dst $_;
- if (/^__DATA__$/) {
+ if (/^sub TIMESTAMP/) {
+  print  $dst "sub TIMESTAMP () { $timestamp }\n";
+ } elsif (/^__DATA__$/) {
+  print  $dst "__DATA__\n";
   printf $dst "%s%s %s\n", $_, (' ' x ($max - length)), $name_mismatch{$_}
                                                    for sort keys %name_mismatch;
   last SRC;
+ } else {
+  print $dst $_;
  }
 }
 

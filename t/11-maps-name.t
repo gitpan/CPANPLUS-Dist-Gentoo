@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 1 + 7 + 9;
+use Test::More tests => 1 + 6 + 10;
 
 use CPANPLUS::Dist::Gentoo::Maps;
 
@@ -12,7 +12,6 @@ use CPANPLUS::Dist::Gentoo::Maps;
 is nc2g('CPANPLUS-Dist-Gentoo'), 'CPANPLUS-Dist-Gentoo', 'name_c2g returns non gentooisms correctly';
 
 my %core_gentooisms = (
- 'ANSIColor'       => 'Term-ANSIColor',
  'Digest'          => 'digest-base',
  'I18N-LangTags'   => 'i18n-langtags',
  'Locale-Maketext' => 'locale-maketext',
@@ -32,6 +31,7 @@ my %cpan_gentooisms = (
  'Log-Dispatch'  => 'log-dispatch',
  'Math-Pari'     => 'math-pari',
  'Regexp-Common' => 'regexp-common',
+ 'Time-Period'   => 'Period',
  'Tk'            => 'perl-tk',
  'Wx'            => 'wxperl',
  'YAML'          => 'yaml',
